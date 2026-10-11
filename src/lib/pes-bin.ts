@@ -108,6 +108,27 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
     if (item) item.count++;
     else frequency.set(key, { rgba, count: 1 });
   }
+  // PNGs ja indexados com ate 16 cores nao devem passar por quantizacao.
+  // Preservar RGBA exato, inclusive alpha, evita perder os detalhes da arte.
+  if (frequency.size <= 16) {
+    const colors = [...frequency.values()].map(entry => entry.rgba);
+    colors.sort((a, b) => (a[3] === 0 ? -1 : b[3] === 0 ? 1 : 0));
+    const lookup = new Map(colors.map((color, index) => [color.join(","), index]));
+    colors.forEach((color, index) => setPaletteColor(d, paletteTexture, index, color));
+    for (let k = colors.length; k < 16; k++) setPaletteColor(d, paletteTexture, k, [0, 0, 0, 0]);
+    const base = pix.offset + 0x80;
+    for (let i = 0; i < pix.width * pix.height; i++) {
+      const p = i * 4;
+      const rgba: RGBA = img.data[p + 3] < 8
+        ? [0, 0, 0, 0]
+        : [img.data[p], img.data[p + 1], img.data[p + 2], img.data[p + 3]];
+      const index = lookup.get(rgba.join(","));
+      if (index === undefined) throw new Error("Cor do PNG nao encontrada na paleta.");
+      const pos = base + (i >> 1), old = d[pos] ?? 0;
+      d[pos] = (i & 1) ? (old & 15) | (index << 4) : (old & 240) | index;
+    }
+    return;
+  }
   const entries = [...frequency.values()].sort((a, b) => b.count - a.count);
   const hasTransparent = entries.some(e => e.rgba[3] === 0);
   const palette: RGBA[] = hasTransparent ? [[0, 0, 0, 0]] : [];
