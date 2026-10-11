@@ -155,3 +155,82 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
     d[pos] = (i & 1) ? (old & 15) | (best << 4) : (old & 240) | best;
   }
 }
+
+/**
+ * Codifica até três PNGs em UM mapa 4bpp compartilhado.
+ * Quantiza vetores de cores (uma cor RGBA por paleta) conjuntamente.
+ * Não cria mapas de pixels independentes: respeita o formato original.
+ */
+export function importJointPaletteImages(d: Uint8Array, pix: Tex, textures: Tex[], images: ImageData[]) {
+  if (textures.length !== images.length || !textures.length || textures.length > 3)
+    throw new Error("São necessárias de 1 a 3 imagens correspondentes às paletas.");
+  const n = pix.width * pix.height, channels = images.length * 4;
+  if (images.some(im => im.width !== pix.width || im.height !== pix.height))
+    throw new Error("As imagens devem ter o tamanho da textura.");
+  const samples = new Uint8Array(n * channels);
+  const hist = new Map<string, { values: number[]; count: number }>();
+  for (let i = 0; i < n; i++) {
+    const vals: number[] = [];
+    for (const img of images) {
+      const k = i * 4, a = img.data[k + 3];
+      vals.push(a < 8 ? 0 : img.data[k], a < 8 ? 0 : img.data[k + 1], a < 8 ? 0 : img.data[k + 2], a < 8 ? 0 : a);
+    }
+    samples.set(vals, i * channels);
+    const key = vals.join(",");
+    const item = hist.get(key);
+    if (item) item.count++; else hist.set(key, { values: vals, count: 1 });
+  }
+  const entries = [...hist.values()].sort((a, b) => b.count - a.count);
+  const distance = (a: number[], b: number[]) => {
+    let score = 0;
+    for (let j = 0; j < channels; j += 4) {
+      const da = a[j + 3] - b[j + 3];
+      score += 4 * da * da;
+      if (a[j + 3] || b[j + 3]) {
+        const weight = Math.min(a[j + 3], b[j + 3]) / 255;
+        for (let k = 0; k < 3; k++) score += weight * (a[j + k] - b[j + k]) ** 2;
+      }
+    }
+    return score;
+  };
+  const centers: number[][] = [new Array(channels).fill(0)];
+  // Inicialização por distância ponderada: evita desperdiçar índices com o fundo.
+  while (centers.length < Math.min(16, entries.length)) {
+    let best: number[] | undefined, bestScore = -1;
+    for (const e of entries) {
+      const score = Math.min(...centers.map(c => distance(e.values, c))) * Math.sqrt(e.count);
+      if (score > bestScore) { best = e.values; bestScore = score; }
+    }
+    if (!best || bestScore === 0) break;
+    centers.push([...best]);
+  }
+  for (let pass = 0; pass < 10; pass++) {
+    const sums = centers.map(() => new Float64Array(channels + 1));
+    for (const e of entries) {
+      let closest = 0, bd = Infinity;
+      centers.forEach((c, k) => { const v = distance(e.values, c); if (v < bd) { bd = v; closest = k; } });
+      for (let j = 0; j < channels; j++) sums[closest][j] += e.values[j] * e.count;
+      sums[closest][channels] += e.count;
+    }
+    sums.forEach((s, k) => {
+      if (k === 0 || !s[channels]) return;
+      centers[k] = Array.from({ length: channels }, (_, j) => Math.round(s[j] / s[channels]));
+    });
+  }
+  // O índice zero é reservado para transparência nas três paletas.
+  centers[0] = new Array(channels).fill(0);
+  const base = pix.offset + 0x80;
+  for (let i = 0; i < n; i++) {
+    const vals = Array.from(samples.subarray(i * channels, (i + 1) * channels));
+    let chosen = 0, best = Infinity;
+    centers.forEach((c, k) => { const v = distance(vals, c); if (v < best) { best = v; chosen = k; } });
+    const pos = base + (i >> 1), old = d[pos] ?? 0;
+    d[pos] = i & 1 ? (old & 15) | (chosen << 4) : (old & 240) | chosen;
+  }
+  textures.forEach((tex, t) => {
+    for (let k = 0; k < 16; k++) {
+      const c = centers[k] ?? new Array(channels).fill(0);
+      setPaletteColor(d, tex, k, c.slice(t * 4, t * 4 + 4) as RGBA);
+    }
+  });
+}
