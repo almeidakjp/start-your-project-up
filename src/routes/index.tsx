@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importJointPaletteImages,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, fromImageData,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -29,7 +29,6 @@ function BinEditor() {
   const [ver, setVer] = useState(0);
   const [err, setErr] = useState("");
   const [bg, setBg] = useState("#1f2a24");
-  const [pendingPngs, setPendingPngs] = useState<(ImageData | null)[]>([null, null, null]);
   const canvas = useRef<HTMLCanvasElement>(null);
 
   const pix = bin?.textures.find((t) => t.hasPixels);
@@ -43,7 +42,7 @@ function BinEditor() {
 
   const open = async (f?: File) => {
     if (!f) return; setErr("");
-    try { const b = await readBin(await f.arrayBuffer()); setBin(b); setPendingPngs([null, null, null]); setName(f.name); setPal(b.textures.indexOf(b.textures.find((t) => t.hasPixels)!)); }
+    try { const b = await readBin(await f.arrayBuffer()); setBin(b); setName(f.name); setPal(b.textures.indexOf(b.textures.find((t) => t.hasPixels)!)); }
     catch (e) { setBin(null); setErr((e as Error).message); }
   };
 
@@ -61,136 +60,15 @@ function BinEditor() {
   };
 
   const importPng = (f?: File) => {
-    if (!f || !bin || !pix || !palTex) return;
+    if (!f || !bin || !pix) return;
     const img = new Image();
     img.onload = () => {
       const c = document.createElement("canvas"); c.width = pix.width; c.height = pix.height;
       const ctx = c.getContext("2d")!; ctx.drawImage(img, 0, 0, pix.width, pix.height);
-      // Salva as paletas e os indices antigos antes de substituir o desenho.
-      // Todas as paletas usam os mesmos indices 4bpp.
-      const previousPalettes = bin.textures.map(t => getPalette(bin.data, t));
-      const pixelBase = pix.offset + 0x80;
-      const pixelCount = pix.width * pix.height;
-      const oldIndices = new Uint8Array(pixelCount);
-      for (let i = 0; i < pixelCount; i++) {
-        const value = bin.data[pixelBase + (i >> 1)];
-        oldIndices[i] = (i & 1) ? value >> 4 : value & 15;
-      }
-      importPngWithPalette(bin.data, pix, palTex, ctx.getImageData(0, 0, pix.width, pix.height));
-      // Remapeia apenas indices visiveis para cores antigas visiveis.
-      // O indice transparente do PNG permanece transparente em todas as paletas.
-      const newPalette = getPalette(bin.data, palTex);
-      const overlaps = Array.from({ length: 16 }, () => new Uint32Array(16));
-      for (let i = 0; i < pixelCount; i++) {
-        const value = bin.data[pixelBase + (i >> 1)];
-        const next = ((i & 1) ? value >> 4 : value & 15) & 15;
-        overlaps[next][oldIndices[i]]++;
-      }
-      bin.textures.forEach((texture, paletteIndex) => {
-        if (paletteIndex === pal) return;
-        const previous = previousPalettes[paletteIndex];
-        // Usa a cor opaca mais comum como reserva quando o desenho mudou.
-        const counts = new Uint32Array(16);
-        for (const old of oldIndices) counts[old]++;
-        let fallback = 0, fallbackScore = -1;
-        for (let k = 0; k < 16; k++) {
-          const score = counts[k] * previous[k][3];
-          if (previous[k][3] > 0 && score > fallbackScore) {
-            fallback = k; fallbackScore = score;
-          }
-        }
-        for (let next = 0; next < 16; next++) {
-          if (newPalette[next][3] === 0) {
-            setPaletteColor(bin.data, texture, next, [0, 0, 0, 0]);
-            continue;
-          }
-          let chosen = fallback, bestScore = -1;
-          for (let old = 0; old < 16; old++) {
-            if (previous[old][3] === 0) continue;
-            const score = overlaps[next][old] * previous[old][3];
-            if (score > bestScore) { chosen = old; bestScore = score; }
-          }
-          // Nao transforma pixels visiveis em transparentes.
-          const color = previous[chosen];
-          setPaletteColor(bin.data, texture, next,
-            color[3] > 0 ? [...color] as RGBA : [0, 0, 0, 255]);
-        }
-      });
+      fromImageData(bin.data, pix, ctx.getImageData(0, 0, pix.width, pix.height));
       setVer((v) => v + 1);
     };
     img.src = URL.createObjectURL(f);
-  };
-
-  // Importa as cores de um PNG sem alterar os pixels 4bpp compartilhados.
-  // Cada indice recebe a media dos pixels correspondentes na imagem.
-  const importPaletteOnly = (f?: File) => {
-    if (!f || !bin || !pix || !palTex) return;
-    setErr("");
-    const img = new Image();
-    const url = URL.createObjectURL(f);
-    img.onerror = () => { URL.revokeObjectURL(url); setErr("Não foi possível abrir o PNG."); };
-    img.onload = () => {
-      try {
-        const c = document.createElement("canvas");
-        c.width = pix.width; c.height = pix.height;
-        const ctx = c.getContext("2d");
-        if (!ctx) throw new Error("Canvas indisponível");
-        ctx.drawImage(img, 0, 0, pix.width, pix.height);
-        const rgba = ctx.getImageData(0, 0, pix.width, pix.height).data;
-        const sums = Array.from({ length: 16 }, () => [0, 0, 0, 0, 0]);
-        const base = pix.offset + 0x80;
-        for (let i = 0; i < pix.width * pix.height; i++) {
-          const b = bin.data[base + (i >> 1)];
-          const index = (i & 1) ? (b >> 4) & 15 : b & 15;
-          const a = rgba[i * 4 + 3] / 255;
-          // Media ponderada para evitar halos escuros nas bordas.
-          for (let j = 0; j < 3; j++) sums[index][j] += rgba[i * 4 + j] * a;
-          sums[index][3] += rgba[i * 4 + 3];
-          sums[index][4] += 1;
-        }
-        const before = getPalette(bin.data, palTex);
-        sums.forEach((v, i) => {
-          if (!v[4]) return;
-          const alpha = Math.round(v[3] / v[4]);
-          const weight = v[3] / 255;
-          const rgb = weight ? [0, 1, 2].map(j => Math.round(v[j] / weight)) : before[i].slice(0, 3);
-          setPaletteColor(bin.data, palTex, [i][0], [...rgb, alpha] as RGBA);
-        });
-        setVer(v => v + 1);
-      } catch (e) { setErr((e as Error).message); }
-      finally { URL.revokeObjectURL(url); }
-    };
-    img.src = url;
-  };
-
-  const stagePng = (f?: File) => {
-    if (!f || !pix) return;
-    const selected = pal, image = new Image(), url = URL.createObjectURL(f);
-    image.onerror = () => { URL.revokeObjectURL(url); setErr("Falha ao abrir PNG."); };
-    image.onload = () => {
-      const c = document.createElement("canvas");
-      c.width = pix.width; c.height = pix.height;
-      const ctx = c.getContext("2d")!;
-      ctx.drawImage(image, 0, 0, pix.width, pix.height);
-      const pixels = ctx.getImageData(0, 0, pix.width, pix.height);
-      setPendingPngs(old => { const next = [...old]; next[selected] = pixels; return next; });
-      setErr("");
-      URL.revokeObjectURL(url);
-    };
-    image.src = url;
-  };
-
-  const applyStagedPngs = () => {
-    if (!bin || !pix) return;
-    const textures = bin.textures.slice(0, 3);
-    if (!textures.some((_, i) => pendingPngs[i])) return;
-    try {
-      const images = textures.map((t, i) => pendingPngs[i] ?? toImageData(bin.data, pix, t));
-      importJointPaletteImages(bin.data, pix, textures, images);
-      setPendingPngs([null, null, null]);
-      setErr("");
-      setVer(v => v + 1);
-    } catch (e) { setErr((e as Error).message); }
   };
 
   const colors = bin && palTex ? getPalette(bin.data, palTex) : [];
@@ -259,21 +137,6 @@ function BinEditor() {
               Importar PNG
               <input type="file" accept="image/png" className="hidden" onChange={(e) => importPng(e.target.files?.[0])} />
             </label>
-            <label className="col-span-2 cursor-pointer rounded-md border border-primary/50 bg-secondary py-3 text-center text-sm font-semibold hover:bg-accent">
-              Importar cores do PNG na Paleta {pal + 1} (preservar desenho)
-              <input type="file" accept="image/png" className="hidden" onChange={(e) => { importPaletteOnly(e.target.files?.[0]); e.target.value = ""; }} />
-            </label>
-            <p className="col-span-2 text-xs text-muted-foreground">Modo seguro: mantém os pixels compartilhados e altera somente as 16 cores da paleta selecionada. Não substitui desenhos independentes.</p>
-            <div className="col-span-2 rounded-lg border border-primary/50 p-3 space-y-2">
-              <p className="text-sm font-semibold">Importar desenhos por paleta (experimental)</p>
-              <label className="block cursor-pointer rounded-md bg-secondary p-3 text-center text-sm">
-                Escolher PNG para Paleta {pal + 1}
-                <input type="file" accept="image/png" className="hidden" onChange={e => { stagePng(e.target.files?.[0]); e.target.value = ""; }} />
-              </label>
-              <p className="text-xs text-muted-foreground">PNG preparados: {pendingPngs.map((v, i) => v ? `Paleta ${i + 1}` : "").filter(Boolean).join(", ") || "nenhum"}. Selecione cada paleta e carregue seu PNG; depois aplique todos juntos.</p>
-              <button onClick={applyStagedPngs} disabled={!pendingPngs.some(Boolean)} className="w-full rounded-md bg-primary py-3 font-semibold text-primary-foreground disabled:opacity-40">Aplicar PNGs juntos</button>
-              <p className="text-xs text-muted-foreground">Combina as imagens no limite de 16 índices compartilhados. As paletas sem PNG usam o desenho atual. Confira as prévias antes de salvar.</p>
-            </div>
             <button onClick={save} className="col-span-2 rounded-md bg-primary py-3 font-display text-2xl tracking-wide text-primary-foreground hover:opacity-90">
               Salvar .BIN
             </button>
