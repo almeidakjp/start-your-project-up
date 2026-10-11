@@ -1,182 +1,148 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
+import {
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, fromImageData,
+  type PesBin, type RGBA,
+} from "@/lib/pes-bin";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Kit Editor PES 2014 PSP" },
-      { name: "description", content: "Crie e edite uniformes para PES 2014 PSP direto no celular e exporte em PNG." },
-      { property: "og:title", content: "Kit Editor PES 2014 PSP" },
-      { property: "og:description", content: "Crie uniformes para PES 2014 PSP e exporte em PNG." },
+      { title: "Editor de .bin — Números e Letras PES 2014 PSP" },
+      { name: "description", content: "Abra arquivos .bin de números e letras do PES 2014 PSP, troque cores e imagens e salve um novo .bin." },
+      { property: "og:title", content: "Editor de .bin PES 2014 PSP" },
+      { property: "og:description", content: "Edite números e letras dos uniformes do PES 2014 PSP pelo celular." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
     ],
   }),
-  component: Index,
+  component: BinEditor,
 });
 
-type Pattern = "liso" | "listras" | "faixa" | "diagonal" | "metade" | "aros";
-type Kit = {
-  id: string; team: string; base: string; second: string; detail: string;
-  pattern: Pattern; name: string; number: string; numColor: string; badge?: string;
-};
+const hex = (c: RGBA) => "#" + c.slice(0, 3).map((x) => x.toString(16).padStart(2, "0")).join("");
+const fromHex = (h: string, a: number): RGBA => [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16), a];
 
-const W = 512, H = 256;
-const defaultKit = (): Kit => ({
-  id: crypto.randomUUID(), team: "Meu Time", base: "#ffffff", second: "#1a7f37",
-  detail: "#111111", pattern: "listras", name: "SILVA", number: "10", numColor: "#111111",
-});
-
-function drawPattern(c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, k: Kit) {
-  c.fillStyle = k.base; c.fillRect(x, y, w, h);
-  c.fillStyle = k.second;
-  c.save(); c.beginPath(); c.rect(x, y, w, h); c.clip();
-  if (k.pattern === "listras") for (let i = 0; i < w; i += w / 8) c.fillRect(x + i, y, w / 16, h);
-  if (k.pattern === "aros") for (let i = 0; i < h; i += h / 6) c.fillRect(x, y + i, w, h / 12);
-  if (k.pattern === "faixa") c.fillRect(x, y + h * 0.35, w, h * 0.2);
-  if (k.pattern === "metade") c.fillRect(x + w / 2, y, w / 2, h);
-  if (k.pattern === "diagonal") { c.beginPath(); c.moveTo(x, y + h * 0.2); c.lineTo(x + w, y + h * 0.75); c.lineTo(x + w, y + h); c.lineTo(x, y + h * 0.45); c.fill(); }
-  c.restore();
-}
-
-function render(c: CanvasRenderingContext2D, k: Kit, badge: HTMLImageElement | null) {
-  c.clearRect(0, 0, W, H);
-  // Camisa frente (0-256 x 0-160), costas (256-512 x 0-160), shorts e meias embaixo
-  drawPattern(c, 0, 0, 256, 160, k);
-  drawPattern(c, 256, 0, 256, 160, k);
-  // golas
-  c.fillStyle = k.detail;
-  c.fillRect(96, 0, 64, 10); c.fillRect(352, 0, 64, 8);
-  // shorts
-  c.fillStyle = k.detail; c.fillRect(0, 160, 384, 64);
-  c.fillStyle = k.second; c.fillRect(0, 160, 384, 6);
-  // meias
-  c.fillStyle = k.base; c.fillRect(384, 160, 128, 96);
-  c.fillStyle = k.second; c.fillRect(384, 180, 128, 12);
-  c.fillStyle = k.detail; c.fillRect(0, 224, 384, 32);
-  // escudo
-  if (badge) c.drawImage(badge, 150, 30, 36, 36);
-  // número frente
-  c.fillStyle = k.numColor; c.textAlign = "center";
-  c.font = "bold 28px Bebas Neue, sans-serif"; c.fillText(k.number, 80, 60);
-  // nome e número costas
-  c.font = "bold 22px Bebas Neue, sans-serif"; c.fillText(k.name.toUpperCase(), 384, 40);
-  c.font = "bold 80px Bebas Neue, sans-serif"; c.fillText(k.number, 384, 120);
-  // número shorts
-  c.font = "bold 22px Bebas Neue, sans-serif"; c.fillStyle = k.base; c.fillText(k.number, 60, 200);
-}
-
-const patterns: Pattern[] = ["liso", "listras", "aros", "faixa", "diagonal", "metade"];
-
-function Index() {
+function BinEditor() {
+  const [bin, setBin] = useState<PesBin | null>(null);
+  const [name, setName] = useState("");
+  const [pal, setPal] = useState(0);
+  const [ver, setVer] = useState(0);
+  const [err, setErr] = useState("");
+  const [bg, setBg] = useState("#1f2a24");
   const canvas = useRef<HTMLCanvasElement>(null);
-  const [kit, setKit] = useState<Kit>(defaultKit);
-  const [badge, setBadge] = useState<HTMLImageElement | null>(null);
-  const [saved, setSaved] = useState<Kit[]>([]);
 
-  useEffect(() => { setSaved(JSON.parse(localStorage.getItem("kits") || "[]")); }, []);
-  useEffect(() => {
-    if (!kit.badge) return setBadge(null);
-    const img = new Image(); img.onload = () => setBadge(img); img.src = kit.badge;
-  }, [kit.badge]);
-  useEffect(() => {
-    const c = canvas.current?.getContext("2d");
-    if (c) document.fonts.ready.then(() => render(c, kit, badge));
-  }, [kit, badge]);
+  const pix = bin?.textures.find((t) => t.hasPixels);
+  const palTex = bin?.textures[pal];
 
-  const set = <K extends keyof Kit>(key: K, v: Kit[K]) => setKit((k) => ({ ...k, [key]: v }));
-  const persist = (list: Kit[]) => { setSaved(list); localStorage.setItem("kits", JSON.stringify(list)); };
-  const save = () => persist([kit, ...saved.filter((s) => s.id !== kit.id)]);
-  const download = () => {
+  useEffect(() => {
+    if (!bin || !pix || !palTex || !canvas.current) return;
+    const c = canvas.current; c.width = pix.width; c.height = pix.height;
+    c.getContext("2d")!.putImageData(toImageData(bin.data, pix, palTex), 0, 0);
+  }, [bin, pix, palTex, ver]);
+
+  const open = async (f?: File) => {
+    if (!f) return; setErr("");
+    try { const b = await readBin(await f.arrayBuffer()); setBin(b); setName(f.name); setPal(b.textures.indexOf(b.textures.find((t) => t.hasPixels)!)); }
+    catch (e) { setBin(null); setErr((e as Error).message); }
+  };
+
+  const save = async () => {
+    if (!bin) return;
+    const out = await writeBin(bin);
     const a = document.createElement("a");
-    a.href = canvas.current!.toDataURL("image/png");
-    a.download = `${kit.team.replace(/\s+/g, "_")}_kit.png`; a.click();
-  };
-  const onBadge = (f?: File) => {
-    if (!f) return; const r = new FileReader();
-    r.onload = () => set("badge", r.result as string); r.readAsDataURL(f);
+    a.href = URL.createObjectURL(new Blob([out as BlobPart]));
+    a.download = name || "editado.bin"; a.click();
   };
 
-  const Color = ({ label, k }: { label: string; k: "base" | "second" | "detail" | "numColor" }) => (
-    <label className="flex flex-col items-center gap-1 text-xs text-muted-foreground">
-      <input type="color" value={kit[k]} onChange={(e) => set(k, e.target.value)}
-        className="h-12 w-12 cursor-pointer rounded-md border-2 border-border bg-transparent" />
-      {label}
-    </label>
-  );
+  const exportPng = () => {
+    const a = document.createElement("a");
+    a.href = canvas.current!.toDataURL("image/png"); a.download = name + ".png"; a.click();
+  };
+
+  const importPng = (f?: File) => {
+    if (!f || !bin || !pix) return;
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas"); c.width = pix.width; c.height = pix.height;
+      const ctx = c.getContext("2d")!; ctx.drawImage(img, 0, 0, pix.width, pix.height);
+      fromImageData(bin.data, pix, ctx.getImageData(0, 0, pix.width, pix.height));
+      setVer((v) => v + 1);
+    };
+    img.src = URL.createObjectURL(f);
+  };
+
+  const colors = bin && palTex ? getPalette(bin.data, palTex) : [];
+  const setColor = (i: number, c: RGBA) => { setPaletteColor(bin!.data, palTex!, i, c); setVer((v) => v + 1); };
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-6">
-      <header className="mb-5">
-        <h1 className="font-display text-5xl leading-none tracking-wide text-primary">Kit Editor</h1>
-        <p className="text-sm text-muted-foreground">Uniformes para PES 2014 PSP</p>
+      <header className="mb-5 flex items-end justify-between">
+        <div>
+          <h1 className="font-display text-5xl leading-none tracking-wide text-primary">Editor .BIN</h1>
+          <p className="text-sm text-muted-foreground">Números e letras · PES 2014 PSP</p>
+        </div>
+        <Link to="/desenhar" className="text-sm text-primary underline-offset-4 hover:underline">Desenhar uniforme</Link>
       </header>
 
-      <div className="rounded-xl border bg-card p-3">
-        <canvas ref={canvas} width={W} height={H} className="w-full rounded-md bg-muted [image-rendering:pixelated]" />
-        <div className="mt-2 grid grid-cols-2 text-center text-[10px] uppercase tracking-widest text-muted-foreground">
-          <span>Frente</span><span>Costas</span>
-        </div>
-      </div>
+      <label className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed bg-card py-6 text-center hover:bg-accent">
+        <span className="font-display text-2xl tracking-wide">{bin ? name : "Abrir arquivo .bin"}</span>
+        <span className="text-xs text-muted-foreground">{bin ? "Toque para trocar" : "Ex.: ID01401 (números), ID01402 (letras)"}</span>
+        <input type="file" className="hidden" onChange={(e) => open(e.target.files?.[0])} />
+      </label>
+      {err && <p className="mt-3 rounded-md bg-destructive/15 p-3 text-sm text-destructive">{err}</p>}
 
-      <section className="mt-5 space-y-5 rounded-xl border bg-card p-4">
-        <input value={kit.team} onChange={(e) => set("team", e.target.value)} placeholder="Nome do time"
-          className="w-full rounded-md border bg-input/30 px-3 py-2 font-display text-2xl tracking-wide outline-none focus:ring-2 focus:ring-ring" />
-
-        <div>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Cores</h2>
-          <div className="flex justify-between">
-            <Color label="Principal" k="base" /><Color label="Secundária" k="second" />
-            <Color label="Detalhe" k="detail" /><Color label="Número" k="numColor" />
+      {bin && pix && (
+        <>
+          <div className="mt-5 rounded-xl border bg-card p-3">
+            <div className="rounded-md p-2" style={{ background: bg }}>
+              <canvas ref={canvas} className="w-full [image-rendering:pixelated]" />
+            </div>
+            <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+              <span>{pix.width}×{pix.height} · 16 cores</span>
+              <label className="flex items-center gap-2">Fundo
+                <input type="color" value={bg} onChange={(e) => setBg(e.target.value)} className="h-6 w-6 bg-transparent" />
+              </label>
+            </div>
           </div>
-        </div>
 
-        <div>
-          <h2 className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Modelo</h2>
-          <div className="grid grid-cols-3 gap-2">
-            {patterns.map((p) => (
-              <button key={p} onClick={() => set("pattern", p)}
-                className={`rounded-md border py-2 text-sm font-semibold capitalize transition ${kit.pattern === p ? "border-primary bg-primary text-primary-foreground" : "bg-secondary hover:bg-accent"}`}>
-                {p}
-              </button>
-            ))}
-          </div>
-        </div>
+          {bin.textures.length > 1 && (
+            <div className="mt-4 flex gap-2">
+              {bin.textures.map((t, i) => (
+                <button key={i} onClick={() => setPal(i)}
+                  className={`flex-1 rounded-md border py-2 text-sm font-semibold ${pal === i ? "border-primary bg-primary text-primary-foreground" : "bg-secondary"}`}>
+                  Paleta {i + 1}
+                </button>
+              ))}
+            </div>
+          )}
 
-        <div className="grid grid-cols-3 gap-2">
-          <input value={kit.name} onChange={(e) => set("name", e.target.value.slice(0, 12))} placeholder="Nome"
-            className="col-span-2 rounded-md border bg-input/30 px-3 py-2 uppercase outline-none focus:ring-2 focus:ring-ring" />
-          <input value={kit.number} onChange={(e) => set("number", e.target.value.replace(/\D/g, "").slice(0, 2))} placeholder="Nº"
-            inputMode="numeric" className="rounded-md border bg-input/30 px-3 py-2 text-center outline-none focus:ring-2 focus:ring-ring" />
-        </div>
+          <section className="mt-4 rounded-xl border bg-card p-4">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-widest text-muted-foreground">Cores da paleta</h2>
+            <div className="grid grid-cols-8 gap-2">
+              {colors.map((c, i) => (
+                <div key={i} className="flex flex-col items-center gap-1">
+                  <input type="color" value={hex(c)} onChange={(e) => setColor(i, fromHex(e.target.value, c[3]))}
+                    className="h-9 w-9 cursor-pointer rounded border bg-transparent" />
+                  <input type="range" min={0} max={255} value={c[3]} onChange={(e) => setColor(i, [c[0], c[1], c[2], +e.target.value])}
+                    className="w-9 accent-primary" title="Transparência" />
+                </div>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">A barrinha embaixo de cada cor controla a transparência.</p>
+          </section>
 
-        <label className="flex cursor-pointer items-center justify-center rounded-md border border-dashed py-3 text-sm text-muted-foreground hover:bg-accent">
-          {kit.badge ? "Trocar escudo" : "Adicionar escudo (imagem)"}
-          <input type="file" accept="image/*" className="hidden" onChange={(e) => onBadge(e.target.files?.[0])} />
-        </label>
-
-        <div className="grid grid-cols-2 gap-2">
-          <button onClick={save} className="rounded-md bg-secondary py-3 font-display text-xl tracking-wide hover:bg-accent">Salvar</button>
-          <button onClick={download} className="rounded-md bg-primary py-3 font-display text-xl tracking-wide text-primary-foreground hover:opacity-90">Baixar PNG</button>
-        </div>
-      </section>
-
-      {saved.length > 0 && (
-        <section className="mt-5">
-          <div className="mb-2 flex items-center justify-between">
-            <h2 className="font-display text-2xl tracking-wide">Meus kits</h2>
-            <button onClick={() => setKit(defaultKit())} className="text-sm text-primary">+ Novo</button>
-          </div>
-          <ul className="space-y-2">
-            {saved.map((s) => (
-              <li key={s.id} className="flex items-center gap-3 rounded-lg border bg-card p-3">
-                <span className="h-8 w-8 rounded-full border-2" style={{ background: `linear-gradient(90deg, ${s.base} 50%, ${s.second} 50%)` }} />
-                <button onClick={() => setKit(s)} className="flex-1 text-left font-semibold">{s.team}</button>
-                <button onClick={() => persist(saved.filter((x) => x.id !== s.id))} className="text-sm text-destructive">Excluir</button>
-              </li>
-            ))}
-          </ul>
-        </section>
+          <section className="mt-4 grid grid-cols-2 gap-2">
+            <button onClick={exportPng} className="rounded-md bg-secondary py-3 text-sm font-semibold hover:bg-accent">Exportar PNG</button>
+            <label className="cursor-pointer rounded-md bg-secondary py-3 text-center text-sm font-semibold hover:bg-accent">
+              Importar PNG
+              <input type="file" accept="image/png" className="hidden" onChange={(e) => importPng(e.target.files?.[0])} />
+            </label>
+            <button onClick={save} className="col-span-2 rounded-md bg-primary py-3 font-display text-2xl tracking-wide text-primary-foreground hover:opacity-90">
+              Salvar .BIN
+            </button>
+          </section>
+          <p className="mt-3 text-xs text-muted-foreground">Dica: exporte o PNG, edite num app de desenho mantendo o tamanho, e importe de volta.</p>
+        </>
       )}
     </main>
   );
