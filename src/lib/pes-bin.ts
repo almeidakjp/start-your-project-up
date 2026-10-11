@@ -93,3 +93,65 @@ export function fromImageData(d: Uint8Array, t: Tex, img: ImageData) {
     d[pos] = i & 1 ? (cur & 0x0f) | (best << 4) : (cur & 0xf0) | best;
   }
 }
+
+
+/** Cria uma paleta indexada de 16 cores a partir do PNG antes de gravar pixels. */
+export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Tex, img: ImageData) {
+  if (img.width !== pix.width || img.height !== pix.height)
+    throw new Error("PNG precisa ter as dimensões originais da textura");
+  const frequency = new Map<string, { rgba: RGBA; count: number }>();
+  for (let i = 0; i < img.data.length; i += 4) {
+    const a = img.data[i + 3];
+    const rgba: RGBA = a < 8 ? [0, 0, 0, 0] : [img.data[i], img.data[i + 1], img.data[i + 2], a];
+    const key = rgba.join(",");
+    const item = frequency.get(key);
+    if (item) item.count++;
+    else frequency.set(key, { rgba, count: 1 });
+  }
+  const entries = [...frequency.values()].sort((a, b) => b.count - a.count);
+  const hasTransparent = entries.some(e => e.rgba[3] === 0);
+  const palette: RGBA[] = hasTransparent ? [[0, 0, 0, 0]] : [];
+  for (const entry of entries) {
+    if (entry.rgba[3] === 0) continue;
+    if (palette.length >= 16) break;
+    palette.push([...entry.rgba] as RGBA);
+  }
+  const start = hasTransparent ? 1 : 0;
+  if (entries.length > 16) {
+    for (let pass = 0; pass < 6; pass++) {
+      const sums = palette.map(() => [0, 0, 0, 0, 0]);
+      for (const entry of entries) {
+        if (entry.rgba[3] === 0) continue;
+        let best = start, distance = Infinity;
+        for (let k = start; k < palette.length; k++) {
+          const p = palette[k], c = entry.rgba;
+          const delta = (p[0]-c[0])**2 + (p[1]-c[1])**2 + (p[2]-c[2])**2 + 2*(p[3]-c[3])**2;
+          if (delta < distance) { distance = delta; best = k; }
+        }
+        for (let j = 0; j < 4; j++) sums[best][j] += entry.rgba[j] * entry.count;
+        sums[best][4] += entry.count;
+      }
+      for (let k = start; k < palette.length; k++) {
+        const sum = sums[k];
+        if (sum[4]) palette[k] = [0,1,2,3].map(j => Math.round(sum[j] / sum[4])) as RGBA;
+      }
+    }
+  }
+  while (palette.length < 16) palette.push([0, 0, 0, 0]);
+  palette.forEach((color, i) => setPaletteColor(d, paletteTexture, i, color));
+  // fromImageData usa a paleta da textura de pixels; a paleta selecionada
+  // pode estar em outra textura, então os índices são escritos aqui.
+  const base = pix.offset + 0x80;
+  for (let i = 0; i < pix.width * pix.height; i++) {
+    const p = i * 4, a = img.data[p + 3];
+    const c: RGBA = a < 8 ? [0,0,0,0] : [img.data[p],img.data[p+1],img.data[p+2],a];
+    let best = 0, distance = Infinity;
+    for (let k = 0; k < 16; k++) {
+      const v = palette[k];
+      const delta = (v[0]-c[0])**2+(v[1]-c[1])**2+(v[2]-c[2])**2+2*(v[3]-c[3])**2;
+      if (delta < distance) { distance = delta; best = k; }
+    }
+    const pos = base + (i >> 1), old = d[pos] ?? 0;
+    d[pos] = (i & 1) ? (old & 15) | (best << 4) : (old & 240) | best;
+  }
+}
