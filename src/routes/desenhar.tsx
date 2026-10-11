@@ -1,12 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
-export const Route = createFileRoute("/")({
+export const Route = createFileRoute("/desenhar")({
   head: () => ({
     meta: [
-      { title: "Kit Editor PES 2014 PSP" },
+      { title: "Desenhar uniforme — PES 2014 PSP" },
       { name: "description", content: "Crie e edite uniformes para PES 2014 PSP direto no celular e exporte em PNG." },
-      { property: "og:title", content: "Kit Editor PES 2014 PSP" },
+      { property: "og:title", content: "Desenhar uniforme — PES 2014 PSP" },
       { property: "og:description", content: "Crie uniformes para PES 2014 PSP e exporte em PNG." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
