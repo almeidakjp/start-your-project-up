@@ -120,6 +120,48 @@ function BinEditor() {
     img.src = URL.createObjectURL(f);
   };
 
+  // Importa as cores de um PNG sem alterar os pixels 4bpp compartilhados.
+  // Cada indice recebe a media dos pixels correspondentes na imagem.
+  const importPaletteOnly = (f?: File) => {
+    if (!f || !bin || !pix || !palTex) return;
+    setErr("");
+    const img = new Image();
+    const url = URL.createObjectURL(f);
+    img.onerror = () => { URL.revokeObjectURL(url); setErr("Não foi possível abrir o PNG."); };
+    img.onload = () => {
+      try {
+        const c = document.createElement("canvas");
+        c.width = pix.width; c.height = pix.height;
+        const ctx = c.getContext("2d");
+        if (!ctx) throw new Error("Canvas indisponível");
+        ctx.drawImage(img, 0, 0, pix.width, pix.height);
+        const rgba = ctx.getImageData(0, 0, pix.width, pix.height).data;
+        const sums = Array.from({ length: 16 }, () => [0, 0, 0, 0, 0]);
+        const base = pix.offset + 0x80;
+        for (let i = 0; i < pix.width * pix.height; i++) {
+          const b = bin.data[base + (i >> 1)];
+          const index = (i & 1) ? (b >> 4) & 15 : b & 15;
+          const a = rgba[i * 4 + 3] / 255;
+          // Media ponderada para evitar halos escuros nas bordas.
+          for (let j = 0; j < 3; j++) sums[index][j] += rgba[i * 4 + j] * a;
+          sums[index][3] += rgba[i * 4 + 3];
+          sums[index][4] += 1;
+        }
+        const before = getPalette(bin.data, palTex);
+        sums.forEach((v, i) => {
+          if (!v[4]) return;
+          const alpha = Math.round(v[3] / v[4]);
+          const weight = v[3] / 255;
+          const rgb = weight ? [0, 1, 2].map(j => Math.round(v[j] / weight)) : before[i].slice(0, 3);
+          setPaletteColor(bin.data, palTex, [i][0], [...rgb, alpha] as RGBA);
+        });
+        setVer(v => v + 1);
+      } catch (e) { setErr((e as Error).message); }
+      finally { URL.revokeObjectURL(url); }
+    };
+    img.src = url;
+  };
+
   const colors = bin && palTex ? getPalette(bin.data, palTex) : [];
   const setColor = (i: number, c: RGBA) => { setPaletteColor(bin!.data, palTex!, i, c); setVer((v) => v + 1); };
 
@@ -186,6 +228,11 @@ function BinEditor() {
               Importar PNG
               <input type="file" accept="image/png" className="hidden" onChange={(e) => importPng(e.target.files?.[0])} />
             </label>
+            <label className="col-span-2 cursor-pointer rounded-md border border-primary/50 bg-secondary py-3 text-center text-sm font-semibold hover:bg-accent">
+              Importar cores do PNG na Paleta {pal + 1} (preservar desenho)
+              <input type="file" accept="image/png" className="hidden" onChange={(e) => { importPaletteOnly(e.target.files?.[0]); e.target.value = ""; }} />
+            </label>
+            <p className="col-span-2 text-xs text-muted-foreground">Modo seguro: mantém os pixels compartilhados e altera somente as 16 cores da paleta selecionada. Não substitui desenhos independentes.</p>
             <button onClick={save} className="col-span-2 rounded-md bg-primary py-3 font-display text-2xl tracking-wide text-primary-foreground hover:opacity-90">
               Salvar .BIN
             </button>
