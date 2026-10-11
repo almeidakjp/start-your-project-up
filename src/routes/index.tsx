@@ -69,55 +69,14 @@ function BinEditor() {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
         if (pal === 2) importShortColorOnly(bin.data, pix, palTex, png);
         else {
-          // Guarda os indices antigos para transferir a visibilidade das outras paletas.
-          const base = pix.offset + 0x80;
-          const count = pix.width * pix.height;
-          const oldIndices = new Uint8Array(count);
-          for (let i = 0; i < count; i++) {
-            const byte = bin.data[base + (i >> 1)];
-            oldIndices[i] = (byte >> ((i & 1) * 4)) & 15;
-          }
-          const oldPalettes = bin.textures.map(t => getPalette(bin.data, t));
+          // Uma unica imagem e um unico conjunto de indices para as 3 paletas.
+          // Copiar as 16 entradas tambem preserva a transparencia do PNG.
           importPngWithPalette(bin.data, pix, palTex, png);
-          const overlaps = Array.from({ length: 16 }, () => new Uint32Array(16));
-          const newCounts = new Uint32Array(16);
-          for (let i = 0; i < count; i++) {
-            const byte = bin.data[base + (i >> 1)];
-            const next = (byte >> ((i & 1) * 4)) & 15;
-            overlaps[next][oldIndices[i]]++;
-            newCounts[next]++;
-          }
-          const selectedPalette = getPalette(bin.data, palTex);
-          bin.textures.forEach((texture, textureIndex) => {
-            if (textureIndex === pal) return;
-            const previous = oldPalettes[textureIndex];
-            for (let next = 0; next < 16; next++) {
-              if (!newCounts[next]) continue;
-              if (selectedPalette[next][3] === 0) {
-                setPaletteColor(bin.data, texture, next, [0, 0, 0, 0]);
-                continue;
-              }
-              let best = 0, score = -1;
-              for (let old = 0; old < 16; old++) {
-                // Evita mapear numeros visiveis para indices antigos transparentes.
-                if (previous[old][3] === 0) continue;
-                const n = overlaps[next][old];
-                if (n > score) { score = n; best = old; }
-              }
-              if (score <= 0) {
-                // Se o novo desenho nao tem correspondencia, conserva a cor
-                // visivel mais frequente da paleta anterior.
-                let largest = 0;
-                for (let old = 0; old < 16; old++) {
-                  if (previous[old][3] === 0) continue;
-                  let amount = 0;
-                  for (let k = 0; k < 16; k++) amount += overlaps[k][old];
-                  if (amount > largest) { largest = amount; best = old; }
-                }
-              }
-              const chosen = previous[best];
-              if (chosen[3] > 0) setPaletteColor(bin.data, texture, next, [...chosen] as RGBA);
-            }
+          const imported = getPalette(bin.data, palTex);
+          bin.textures.forEach(texture => {
+            imported.forEach((color, i) =>
+              setPaletteColor(bin.data, texture, i, [...color] as RGBA)
+            );
           });
         }
         setErr("");
