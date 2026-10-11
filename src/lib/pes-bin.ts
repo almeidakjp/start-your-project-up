@@ -163,26 +163,50 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
  * Nao altera pixels compartilhados, transparencias nem outras paletas.
  */
 export function importShortColorOnly(d: Uint8Array, pix: Tex, paletteTexture: Tex, img: ImageData) {
-  const frequency = new Map<string, { color: RGBA; count: number }>();
+  // O PSP usa um unico mapa de indices. O PNG da direita fornece apenas
+  // cores: nunca alteramos os pixels compartilhados nem o alpha da paleta.
+  const frequency = new Map<string, { sum: number[]; count: number }>();
   for (let y = 0; y < img.height; y++) {
     for (let x = Math.floor(img.width / 2); x < img.width; x++) {
       const i = (y * img.width + x) * 4;
       if (img.data[i + 3] < 128) continue;
-      const c: RGBA = [img.data[i], img.data[i + 1], img.data[i + 2], 255];
-      const key = c.slice(0, 3).map(v => Math.round(v / 8)).join(",");
-      const found = frequency.get(key);
-      if (found) found.count++; else frequency.set(key, { color: c, count: 1 });
+      const rgb = [img.data[i], img.data[i + 1], img.data[i + 2]];
+      const key = rgb.map(v => Math.floor(v / 8)).join(",");
+      const item = frequency.get(key);
+      if (item) {
+        item.count++;
+        rgb.forEach((v, j) => item.sum[j] += v);
+      } else frequency.set(key, { sum: rgb, count: 1 });
     }
   }
   if (!frequency.size) throw new Error("Nenhum numero visivel encontrado na metade direita do PNG do short.");
-  const dominant = [...frequency.values()].sort((a, b) => b.count - a.count)[0].color;
+  const candidates = [...frequency.values()].map(({sum, count}) =>
+    ({ rgb: sum.map(v => Math.round(v / count)), count })
+  );
   const pal = getPalette(d, paletteTexture);
   const used = new Set<number>();
   const base = pix.offset + 0x80;
   for (let i = 0; i < pix.width * pix.height; i++) {
     used.add(((d[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15);
   }
+  // Para artes multicoloridas (ex.: preto/dourado), mantem os tons distintos.
+  // Para artes de cor unica, todos os indices passam a cor predominante.
+  const dominant = [...candidates].sort((a, b) => b.count - a.count)[0];
+  const distinct = candidates.filter(c =>
+    Math.sqrt(c.rgb.reduce((sum, v, j) => sum + (v - dominant.rgb[j]) ** 2, 0)) > 45
+    && c.count >= Math.max(2, dominant.count * 0.015)
+  );
+  const multiColor = distinct.length > 0;
   pal.forEach((c, i) => {
-    if (used.has(i) && c[3] > 0) setPaletteColor(d, paletteTexture, i, [dominant[0], dominant[1], dominant[2], c[3]]);
+    if (!used.has(i) || c[3] === 0) return;
+    const chosen = multiColor
+      ? candidates.reduce((best, next) => {
+          const dist = (v: typeof next) => v.rgb.reduce((sum, ch, j) => sum + (ch - c[j]) ** 2, 0);
+          return dist(next) < dist(best) ? next : best;
+        }, candidates[0])
+      : dominant;
+    setPaletteColor(d, paletteTexture, i, [
+      chosen.rgb[0], chosen.rgb[1], chosen.rgb[2], c[3]
+    ]);
   });
 }
