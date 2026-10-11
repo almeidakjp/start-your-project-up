@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, fromImageData,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -60,12 +60,12 @@ function BinEditor() {
   };
 
   const importPng = (f?: File) => {
-    if (!f || !bin || !pix) return;
+    if (!f || !bin || !pix || !palTex) return;
     const img = new Image();
     img.onload = () => {
       const c = document.createElement("canvas"); c.width = pix.width; c.height = pix.height;
       const ctx = c.getContext("2d")!; ctx.drawImage(img, 0, 0, pix.width, pix.height);
-      fromImageData(bin.data, pix, ctx.getImageData(0, 0, pix.width, pix.height));
+      importPngWithPalette(bin.data, pix, palTex, ctx.getImageData(0, 0, pix.width, pix.height));
       setVer((v) => v + 1);
     };
     img.src = URL.createObjectURL(f);
