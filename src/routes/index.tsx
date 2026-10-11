@@ -65,7 +65,37 @@ function BinEditor() {
     img.onload = () => {
       const c = document.createElement("canvas"); c.width = pix.width; c.height = pix.height;
       const ctx = c.getContext("2d")!; ctx.drawImage(img, 0, 0, pix.width, pix.height);
+      // Salva as paletas e os indices antigos antes de substituir o desenho.
+      // Todas as paletas usam os mesmos indices 4bpp.
+      const previousPalettes = bin.textures.map(t => getPalette(bin.data, t));
+      const pixelBase = pix.offset + 0x80;
+      const pixelCount = pix.width * pix.height;
+      const oldIndices = new Uint8Array(pixelCount);
+      for (let i = 0; i < pixelCount; i++) {
+        const value = bin.data[pixelBase + (i >> 1)];
+        oldIndices[i] = (i & 1) ? value >> 4 : value & 15;
+      }
       importPngWithPalette(bin.data, pix, palTex, ctx.getImageData(0, 0, pix.width, pix.height));
+      // Para cada indice novo, encontra o indice antigo mais comum na mesma
+      // posicao. Reorganiza as outras paletas sem substituir suas cores.
+      const overlaps = Array.from({ length: 16 }, () => new Uint32Array(16));
+      for (let i = 0; i < pixelCount; i++) {
+        const value = bin.data[pixelBase + (i >> 1)];
+        const next = (i & 1) ? value >> 4 : value & 15;
+        overlaps[next][oldIndices[i]]++;
+      }
+      bin.textures.forEach((texture, paletteIndex) => {
+        if (paletteIndex === pal) return;
+        for (let next = 0; next < 16; next++) {
+          let old = next, highest = 0;
+          for (let candidate = 0; candidate < 16; candidate++) {
+            if (overlaps[next][candidate] > highest) {
+              highest = overlaps[next][candidate]; old = candidate;
+            }
+          }
+          setPaletteColor(bin.data, texture, next, previousPalettes[paletteIndex][old]);
+        }
+      });
       setVer((v) => v + 1);
     };
     img.src = URL.createObjectURL(f);
