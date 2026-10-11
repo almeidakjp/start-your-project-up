@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -65,9 +65,15 @@ function BinEditor() {
     img.onload = () => {
       const c = document.createElement("canvas"); c.width = pix.width; c.height = pix.height;
       const ctx = c.getContext("2d")!; ctx.drawImage(img, 0, 0, pix.width, pix.height);
-      importPngWithPalette(bin.data, pix, palTex, ctx.getImageData(0, 0, pix.width, pix.height));
+      try {
+        const png = ctx.getImageData(0, 0, pix.width, pix.height);
+        if (pal === 2) importShortColorOnly(bin.data, pix, palTex, png);
+        else importPngWithPalette(bin.data, pix, palTex, png);
+        setErr("");
+      } catch (e) { setErr((e as Error).message); return; }
       setVer((v) => v + 1);
     };
+    img.onerror = () => setErr("Não foi possível abrir o PNG.");
     img.src = URL.createObjectURL(f);
   };
 
