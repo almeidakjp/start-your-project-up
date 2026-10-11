@@ -81,13 +81,15 @@ export function fromImageData(d: Uint8Array, t: Tex, img: ImageData) {
   const pal = getPalette(d, t);
   const base = t.offset + 0x80;
   for (let i = 0; i < t.width * t.height; i++) {
-    const r = img.data[i * 4], g = img.data[i * 4 + 1], b = img.data[i * 4 + 2], a = img.data[i * 4 + 3];
+    const px = img.data;
+    const r = px[i * 4] ?? 0, g = px[i * 4 + 1] ?? 0, b = px[i * 4 + 2] ?? 0, a = px[i * 4 + 3] ?? 0;
     let best = 0, bd = Infinity;
     pal.forEach((p, k) => {
       const dd = (p[0] - r) ** 2 + (p[1] - g) ** 2 + (p[2] - b) ** 2 + 2 * (p[3] - a) ** 2;
       if (dd < bd) { bd = dd; best = k; }
     });
     const pos = base + (i >> 1);
-    d[pos] = i & 1 ? (d[pos] & 0x0f) | (best << 4) : (d[pos] & 0xf0) | best;
+    const cur = d[pos] ?? 0;
+    d[pos] = i & 1 ? (cur & 0x0f) | (best << 4) : (cur & 0xf0) | best;
   }
 }
