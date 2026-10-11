@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importJointPaletteImages,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -29,6 +29,7 @@ function BinEditor() {
   const [ver, setVer] = useState(0);
   const [err, setErr] = useState("");
   const [bg, setBg] = useState("#1f2a24");
+  const [pendingPngs, setPendingPngs] = useState<(ImageData | null)[]>([null, null, null]);
   const canvas = useRef<HTMLCanvasElement>(null);
 
   const pix = bin?.textures.find((t) => t.hasPixels);
@@ -42,7 +43,7 @@ function BinEditor() {
 
   const open = async (f?: File) => {
     if (!f) return; setErr("");
-    try { const b = await readBin(await f.arrayBuffer()); setBin(b); setName(f.name); setPal(b.textures.indexOf(b.textures.find((t) => t.hasPixels)!)); }
+    try { const b = await readBin(await f.arrayBuffer()); setBin(b); setPendingPngs([null, null, null]); setName(f.name); setPal(b.textures.indexOf(b.textures.find((t) => t.hasPixels)!)); }
     catch (e) { setBin(null); setErr((e as Error).message); }
   };
 
@@ -162,6 +163,36 @@ function BinEditor() {
     img.src = url;
   };
 
+  const stagePng = (f?: File) => {
+    if (!f || !pix) return;
+    const selected = pal, image = new Image(), url = URL.createObjectURL(f);
+    image.onerror = () => { URL.revokeObjectURL(url); setErr("Falha ao abrir PNG."); };
+    image.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = pix.width; c.height = pix.height;
+      const ctx = c.getContext("2d")!;
+      ctx.drawImage(image, 0, 0, pix.width, pix.height);
+      const pixels = ctx.getImageData(0, 0, pix.width, pix.height);
+      setPendingPngs(old => { const next = [...old]; next[selected] = pixels; return next; });
+      setErr("");
+      URL.revokeObjectURL(url);
+    };
+    image.src = url;
+  };
+
+  const applyStagedPngs = () => {
+    if (!bin || !pix) return;
+    const textures = bin.textures.slice(0, 3);
+    if (!textures.some((_, i) => pendingPngs[i])) return;
+    try {
+      const images = textures.map((t, i) => pendingPngs[i] ?? toImageData(bin.data, pix, t));
+      importJointPaletteImages(bin.data, pix, textures, images);
+      setPendingPngs([null, null, null]);
+      setErr("");
+      setVer(v => v + 1);
+    } catch (e) { setErr((e as Error).message); }
+  };
+
   const colors = bin && palTex ? getPalette(bin.data, palTex) : [];
   const setColor = (i: number, c: RGBA) => { setPaletteColor(bin!.data, palTex!, i, c); setVer((v) => v + 1); };
 
@@ -233,6 +264,16 @@ function BinEditor() {
               <input type="file" accept="image/png" className="hidden" onChange={(e) => { importPaletteOnly(e.target.files?.[0]); e.target.value = ""; }} />
             </label>
             <p className="col-span-2 text-xs text-muted-foreground">Modo seguro: mantém os pixels compartilhados e altera somente as 16 cores da paleta selecionada. Não substitui desenhos independentes.</p>
+            <div className="col-span-2 rounded-lg border border-primary/50 p-3 space-y-2">
+              <p className="text-sm font-semibold">Importar desenhos por paleta (experimental)</p>
+              <label className="block cursor-pointer rounded-md bg-secondary p-3 text-center text-sm">
+                Escolher PNG para Paleta {pal + 1}
+                <input type="file" accept="image/png" className="hidden" onChange={e => { stagePng(e.target.files?.[0]); e.target.value = ""; }} />
+              </label>
+              <p className="text-xs text-muted-foreground">PNG preparados: {pendingPngs.map((v, i) => v ? `Paleta ${i + 1}` : "").filter(Boolean).join(", ") || "nenhum"}. Selecione cada paleta e carregue seu PNG; depois aplique todos juntos.</p>
+              <button onClick={applyStagedPngs} disabled={!pendingPngs.some(Boolean)} className="w-full rounded-md bg-primary py-3 font-semibold text-primary-foreground disabled:opacity-40">Aplicar PNGs juntos</button>
+              <p className="text-xs text-muted-foreground">Combina as imagens no limite de 16 índices compartilhados. As paletas sem PNG usam o desenho atual. Confira as prévias antes de salvar.</p>
+            </div>
             <button onClick={save} className="col-span-2 rounded-md bg-primary py-3 font-display text-2xl tracking-wide text-primary-foreground hover:opacity-90">
               Salvar .BIN
             </button>
