@@ -76,24 +76,43 @@ function BinEditor() {
         oldIndices[i] = (i & 1) ? value >> 4 : value & 15;
       }
       importPngWithPalette(bin.data, pix, palTex, ctx.getImageData(0, 0, pix.width, pix.height));
-      // Para cada indice novo, encontra o indice antigo mais comum na mesma
-      // posicao. Reorganiza as outras paletas sem substituir suas cores.
+      // Remapeia apenas indices visiveis para cores antigas visiveis.
+      // O indice transparente do PNG permanece transparente em todas as paletas.
+      const newPalette = getPalette(bin.data, palTex);
       const overlaps = Array.from({ length: 16 }, () => new Uint32Array(16));
       for (let i = 0; i < pixelCount; i++) {
         const value = bin.data[pixelBase + (i >> 1)];
-        const next = (i & 1) ? value >> 4 : value & 15;
+        const next = ((i & 1) ? value >> 4 : value & 15) & 15;
         overlaps[next][oldIndices[i]]++;
       }
       bin.textures.forEach((texture, paletteIndex) => {
         if (paletteIndex === pal) return;
-        for (let next = 0; next < 16; next++) {
-          let old = next, highest = 0;
-          for (let candidate = 0; candidate < 16; candidate++) {
-            if (overlaps[next][candidate] > highest) {
-              highest = overlaps[next][candidate]; old = candidate;
-            }
+        const previous = previousPalettes[paletteIndex];
+        // Usa a cor opaca mais comum como reserva quando o desenho mudou.
+        const counts = new Uint32Array(16);
+        for (const old of oldIndices) counts[old]++;
+        let fallback = 0, fallbackScore = -1;
+        for (let k = 0; k < 16; k++) {
+          const score = counts[k] * previous[k][3];
+          if (previous[k][3] > 0 && score > fallbackScore) {
+            fallback = k; fallbackScore = score;
           }
-          setPaletteColor(bin.data, texture, next, previousPalettes[paletteIndex][old]);
+        }
+        for (let next = 0; next < 16; next++) {
+          if (newPalette[next][3] === 0) {
+            setPaletteColor(bin.data, texture, next, [0, 0, 0, 0]);
+            continue;
+          }
+          let chosen = fallback, bestScore = -1;
+          for (let old = 0; old < 16; old++) {
+            if (previous[old][3] === 0) continue;
+            const score = overlaps[next][old] * previous[old][3];
+            if (score > bestScore) { chosen = old; bestScore = score; }
+          }
+          // Nao transforma pixels visiveis em transparentes.
+          const color = previous[chosen];
+          setPaletteColor(bin.data, texture, next,
+            color[3] > 0 ? [...color] as RGBA : [0, 0, 0, 255]);
         }
       });
       setVer((v) => v + 1);
