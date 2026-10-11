@@ -155,3 +155,34 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
     d[pos] = (i & 1) ? (old & 15) | (best << 4) : (old & 240) | best;
   }
 }
+
+/**
+ * PES PSP: a paleta 3 (short) usa os mesmos indices do desenho principal.
+ * Extrai a cor predominante dos pixels visiveis na metade direita do PNG
+ * de PES PC e recolore somente os indices ja visiveis da paleta 3.
+ * Nao altera pixels compartilhados, transparencias nem outras paletas.
+ */
+export function importShortColorOnly(d: Uint8Array, pix: Tex, paletteTexture: Tex, img: ImageData) {
+  const frequency = new Map<string, { color: RGBA; count: number }>();
+  for (let y = 0; y < img.height; y++) {
+    for (let x = Math.floor(img.width / 2); x < img.width; x++) {
+      const i = (y * img.width + x) * 4;
+      if (img.data[i + 3] < 128) continue;
+      const c: RGBA = [img.data[i], img.data[i + 1], img.data[i + 2], 255];
+      const key = c.slice(0, 3).map(v => Math.round(v / 8)).join(",");
+      const found = frequency.get(key);
+      if (found) found.count++; else frequency.set(key, { color: c, count: 1 });
+    }
+  }
+  if (!frequency.size) throw new Error("Nenhum numero visivel encontrado na metade direita do PNG do short.");
+  const dominant = [...frequency.values()].sort((a, b) => b.count - a.count)[0].color;
+  const pal = getPalette(d, paletteTexture);
+  const used = new Set<number>();
+  const base = pix.offset + 0x80;
+  for (let i = 0; i < pix.width * pix.height; i++) {
+    used.add(((d[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15);
+  }
+  pal.forEach((c, i) => {
+    if (used.has(i) && c[3] > 0) setPaletteColor(d, paletteTexture, i, [dominant[0], dominant[1], dominant[2], c[3]]);
+  });
+}
