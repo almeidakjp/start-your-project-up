@@ -10,11 +10,11 @@ export type Tex = { offset: number; width: number; height: number; hasPixels: bo
 export type PesBin = { header: Uint8Array; data: Uint8Array; textures: Tex[] };
 
 async function inflate(b: Uint8Array) {
-  const s = new Blob([b]).stream().pipeThrough(new DecompressionStream("deflate"));
+  const s = new Blob([b as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate"));
   return new Uint8Array(await new Response(s).arrayBuffer());
 }
 async function deflate(b: Uint8Array) {
-  const s = new Blob([b]).stream().pipeThrough(new CompressionStream("deflate"));
+  const s = new Blob([b as BlobPart]).stream().pipeThrough(new CompressionStream("deflate"));
   return new Uint8Array(await new Response(s).arrayBuffer());
 }
 
@@ -59,7 +59,7 @@ export type RGBA = [number, number, number, number];
 export const getPalette = (d: Uint8Array, t: Tex): RGBA[] =>
   Array.from({ length: 16 }, (_, i) => {
     const p = t.offset + 0x40 + i * 4;
-    return [d[p], d[p + 1], d[p + 2], d[p + 3]];
+    return [d[p] ?? 0, d[p + 1] ?? 0, d[p + 2] ?? 0, d[p + 3] ?? 0];
   });
 export const setPaletteColor = (d: Uint8Array, t: Tex, i: number, c: RGBA) => d.set(c, t.offset + 0x40 + i * 4);
 
@@ -70,8 +70,8 @@ export function toImageData(d: Uint8Array, pix: Tex, palTex: Tex = pix) {
   const img = new ImageData(w, h);
   const base = pix.offset + 0x80;
   for (let i = 0; i < w * h; i++) {
-    const idx = (d[base + (i >> 1)] >> ((i & 1) * 4)) & 15;
-    img.data.set(pal[idx], i * 4);
+    const idx = ((d[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15;
+    img.data.set(pal[idx] ?? [0, 0, 0, 0], i * 4);
   }
   return img;
 }
