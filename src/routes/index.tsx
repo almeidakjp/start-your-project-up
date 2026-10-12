@@ -64,7 +64,10 @@ function BinEditor() {
     const img = new Image();
     img.onload = () => {
       const c = document.createElement("canvas"); c.width = pix.width; c.height = pix.height;
-      const ctx = c.getContext("2d")!; ctx.drawImage(img, 0, 0, pix.width, pix.height);
+      const ctx = c.getContext("2d")!;
+      // PNG 512x256 -> textura 256x128 sem interpolacao.
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
         if (pal === 2) importShortColorOnly(bin.data, pix, palTex, png);
