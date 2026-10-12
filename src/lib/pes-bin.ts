@@ -184,40 +184,43 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
  * Nao altera pixels compartilhados, transparencias nem outras paletas.
  */
 export function importShortColorOnly(d: Uint8Array, pix: Tex, paletteTexture: Tex, img: ImageData) {
-  // Somente a metade direita do PNG de PES PC fornece as cores do short.
-  // O desenho PSP e os indices 4bpp nunca sao modificados aqui.
-  const freq = new Map<string, { color: RGBA; count: number }>();
+  // PNG do short: recolorir a paleta 3, nunca os pixels 4bpp compartilhados.
+  // Associar as cores por semelhanca RGB com a paleta atual, nao por frequencia
+  // dos indices (isso trocava contornos dourados por preenchimento preto).
+  const frequency = new Map<string, { rgb: [number, number, number]; count: number }>();
   for (let y = 0; y < img.height; y++) {
     for (let x = Math.floor(img.width / 2); x < img.width; x++) {
       const p = (y * img.width + x) * 4;
       if (img.data[p + 3] < 128) continue;
-      const color: RGBA = [img.data[p], img.data[p + 1], img.data[p + 2], 255];
-      const key = color.slice(0, 3).join(",");
-      const item = freq.get(key);
+      const rgb: [number, number, number] = [img.data[p], img.data[p + 1], img.data[p + 2]];
+      const key = rgb.join(",");
+      const item = frequency.get(key);
       if (item) item.count++;
-      else freq.set(key, { color, count: 1 });
+      else frequency.set(key, { rgb, count: 1 });
     }
   }
-  if (!freq.size) throw new Error("Nenhuma cor visivel encontrada na metade direita do PNG do short.");
-  // Preserva cores distintas (ate 16). Cores extras sao aproximadas
-  // porque o formato PSP possui apenas 16 entradas por paleta.
-  const colors = [...freq.values()].sort((a, b) => b.count - a.count).slice(0, 16);
+  if (!frequency.size) throw new Error("Nenhuma cor visivel encontrada na metade direita do PNG do short.");
+  const candidates = [...frequency.values()];
   const current = getPalette(d, paletteTexture);
   const base = pix.offset + 0x80;
-  const counts = new Array<number>(16).fill(0);
+  const used = new Set<number>();
   for (let i = 0; i < pix.width * pix.height; i++) {
-    const index = ((d[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15;
-    if (current[index][3] > 0) counts[index]++;
+    used.add(((d[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15);
   }
-  const active = counts.map((count, index) => ({count, index}))
-    .filter(x => x.count > 0).sort((a, b) => b.count - a.count);
-  if (!active.length) throw new Error("A Paleta 3 nao tem indices visiveis.");
-  // Ordenar por area ocupada preserva as regioes principais e distribui
-  // as demais cores sem tocar nos pixels nem na transparencia.
-  const mainColor = colors[0].color;
-  active.forEach(({index}, order) => {
-    const selected = colors[Math.min(order, colors.length - 1)]?.color ?? mainColor;
-    const a = current[index][3];
-    setPaletteColor(d, paletteTexture, index, [selected[0], selected[1], selected[2], a]);
+  const distance = (a: number[], b: number[]) =>
+    (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+  // Os PNGs de camisa e short podem compartilhar cores exatas: manter a
+  // correspondencia entre cada indice e sua cor, inclusive contornos.
+  current.forEach((color, index) => {
+    if (!used.has(index) || color[3] === 0) return;
+    let best = candidates[0];
+    let minDist = Infinity;
+    for (const candidate of candidates) {
+      const d2 = distance(color, candidate.rgb);
+      if (d2 < minDist) { minDist = d2; best = candidate; }
+    }
+    setPaletteColor(d, paletteTexture, index, [
+      best.rgb[0], best.rgb[1], best.rgb[2], color[3]
+    ]);
   });
 }
