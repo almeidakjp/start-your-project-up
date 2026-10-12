@@ -129,6 +129,26 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
     }
     return;
   }
+  // Letras com desenho novo: separar niveis de cobertura do contorno.
+  // A quantizacao geral abaixo continua responsavel por RGB e indices.
+  // Os numeros 256x128 nao passam por esta normalizacao.
+  if (pix.width === 256 && pix.height === 64 && frequency.size > 16) {
+    const levels = [0, 68, 110, 158, 212, 252, 254, 255];
+    const remapped = new Map<string, { rgba: RGBA; count: number }>();
+    for (let i = 0; i < img.data.length; i += 4) {
+      const a = img.data[i + 3]!;
+      const nearest = levels.reduce((best, n) =>
+        Math.abs(n - a) < Math.abs(best - a) ? n : best, levels[0]!);
+      const rgba: RGBA = nearest === 0 ? [0, 0, 0, 0] :
+        [img.data[i]!, img.data[i + 1]!, img.data[i + 2]!, nearest];
+      const key = rgba.join(",");
+      const found = remapped.get(key);
+      if (found) found.count++;
+      else remapped.set(key, { rgba, count: 1 });
+    }
+    frequency.clear();
+    for (const [key, value] of remapped) frequency.set(key, value);
+  }
   const entries = [...frequency.values()].sort((a, b) => b.count - a.count);
   const hasTransparent = entries.some(e => e.rgba[3] === 0);
   const palette: RGBA[] = hasTransparent ? [[0, 0, 0, 0]] : [];
