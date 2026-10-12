@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importAutoShortColors,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -65,81 +65,22 @@ function BinEditor() {
     img.onload = () => {
       const c = document.createElement("canvas"); c.width = pix.width; c.height = pix.height;
       const ctx = c.getContext("2d")!;
+      // PNG 512x256 -> textura 256x128 sem interpolacao.
       ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
-        // Detectar a faixa dos numeros grandes pela primeira linha, onde
-        // os pequenos dos PNGs PES PC nao aparecem.
-        const source = document.createElement("canvas");
-        source.width = img.naturalWidth; source.height = img.naturalHeight;
-        const sourceCtx = source.getContext("2d")!;
-        sourceCtx.drawImage(img, 0, 0);
-        const rgba = sourceCtx.getImageData(0, 0, source.width, source.height);
-        const w = source.width, h = source.height;
-        // Procurar uma faixa vertical realmente vazia entre os dois conjuntos.
-        // Os numeros pequenos tambem podem ocupar a primeira linha; por isso
-        // analisar apenas a linha superior causava falsos negativos.
-        const column = new Uint32Array(w);
-        for (let y = 0; y < h; y++) {
-          for (let x = 0; x < w; x++) {
-            if (rgba.data[(y * w + x) * 4 + 3] >= 128) column[x]++;
-          }
-        }
-        let split = w;
-        let hasShort = false;
-        // A separacao correta e a PRIMEIRA faixa vazia depois dos
-        // numeros grandes, nao a maior faixa (que pode ficar entre 01 e 56).
-        const minX = Math.floor(w * 0.54), maxX = Math.floor(w * 0.72);
-        for (let x = minX; x < maxX;) {
-          if (column[x] !== 0) { x++; continue; }
-          const first = x;
-          while (x < maxX && column[x] === 0) x++;
-          if (x - first < 2) continue;
-          let leftCount = 0, rightCount = 0;
-          for (let i = 0; i < w; i++) {
-            if (i < first) leftCount += column[i];
-            else if (i >= x) rightCount += column[i];
-          }
-          if (leftCount > 100 && rightCount > Math.max(20, w * h * 0.0003)) {
-            split = x;
-            hasShort = true;
-            break;
-          }
-        }
-        // Reduzir o atlas INTEIRO, mantendo as coordenadas originais.
-        // Ex.: camisa x=8..315 em 512px vira x=4..157 em 256px.
-        // Remover somente a area do short da textura compartilhada.
-        ctx.clearRect(0, 0, pix.width, pix.height);
-        ctx.drawImage(img, 0, 0, w, h, 0, 0, pix.width, pix.height);
-        if (hasShort) {
-          const shortStart = Math.ceil(split * pix.width / w);
-          ctx.clearRect(shortStart, 0, pix.width - shortStart, pix.height);
-        }
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
-        const makeShortPng = () => {
-          const shortCanvas = document.createElement("canvas");
-          shortCanvas.width = pix.width; shortCanvas.height = pix.height;
-          const shortCtx = shortCanvas.getContext("2d")!;
-          shortCtx.imageSmoothingEnabled = false;
-          shortCtx.drawImage(img, split, 0, w - split, h,
-            Math.floor(pix.width / 2), 0, Math.ceil(pix.width / 2), pix.height);
-          return shortCtx.getImageData(0, 0, pix.width, pix.height);
-        };
-        if (pal === 2 && !hasShort) {
-          // PNG separado na Paleta 3: preservar a importacao manual de cores.
-          importShortColorOnly(bin.data, pix, palTex, hasShort ? makeShortPng() : png);
-        } else {
-          // PNG completo: importar sempre o desenho compartilhado, mesmo que
-          // a Paleta 3 esteja selecionada na interface.
-          importPngWithPalette(bin.data, pix, bin.textures[0], png);
-          const imported = getPalette(bin.data, bin.textures[0]);
+        if (pal === 2) importShortColorOnly(bin.data, pix, palTex, png);
+        else {
+          // Uma unica imagem e um unico conjunto de indices para as 3 paletas.
+          // Copiar as 16 entradas tambem preserva a transparencia do PNG.
+          importPngWithPalette(bin.data, pix, palTex, png);
+          const imported = getPalette(bin.data, palTex);
           bin.textures.forEach(texture => {
             imported.forEach((color, i) =>
               setPaletteColor(bin.data, texture, i, [...color] as RGBA)
             );
           });
-          if (hasShort && bin.textures[2]) {
-            importAutoShortColors(bin.data, pix, bin.textures[2], makeShortPng());
-          }
         }
         setErr("");
       } catch (e) { setErr((e as Error).message); return; }
