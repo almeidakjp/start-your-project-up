@@ -1,4 +1,3 @@
-import { readIndexedPng } from "@/lib/indexed-png";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
@@ -63,7 +62,7 @@ function BinEditor() {
   const importPng = (f?: File) => {
     if (!f || !bin || !pix || !palTex) return;
     const img = new Image();
-    img.onload = async () => {
+    img.onload = () => {
       const c = document.createElement("canvas"); c.width = pix.width; c.height = pix.height;
       const ctx = c.getContext("2d")!;
       // PNG 512x256 -> textura 256x128 sem interpolacao.
@@ -91,23 +90,6 @@ function BinEditor() {
         }
         if (unchanged) {
           // Nao tocar em nenhum byte do BIN.
-          setErr("");
-          setVer(v => v + 1);
-          return;
-        }
-        // PNG de letras ja indexado: preservar os indices originais do arquivo.
-        // O canvas converte PLTE em RGBA e perde a numeracao dos indices.
-        const indexed = pix.height === 64 ? await readIndexedPng(f) : null;
-        if (indexed && indexed.width === pix.width && indexed.height === pix.height &&
-            indexed.palette.length <= 16) {
-          const base = pix.offset + 0x80;
-          for (let i = 0; i < indexed.indices.length; i++) {
-            const idx = indexed.indices[i]!;
-            if (idx >= indexed.palette.length) throw new Error("Indice PNG fora da paleta");
-            const off = base + (i >> 1), old = bin.data[off] ?? 0;
-            bin.data[off] = (i & 1) ? (old & 15) | (idx << 4) : (old & 240) | idx;
-          }
-          indexed.palette.forEach((color, i) => setPaletteColor(bin.data, palTex, i, color));
           setErr("");
           setVer(v => v + 1);
           return;
@@ -164,9 +146,12 @@ function BinEditor() {
           // Uma unica imagem e um unico conjunto de indices para as 3 paletas.
           // Copiar as 16 entradas tambem preserva a transparencia do PNG.
           importPngWithPalette(bin.data, pix, palTex, png);
-          // Letras: nao sobrescrever as outras paletas com as cores da
-          // paleta selecionada. Cada paleta representa uma variante do kit.
-          // Apenas a textura/paleta escolhida e modificada pelo importador.
+          const imported = getPalette(bin.data, palTex);
+          bin.textures.forEach(texture => {
+            imported.forEach((color, i) =>
+              setPaletteColor(bin.data, texture, i, [...color] as RGBA)
+            );
+          });
         }
         setErr("");
       } catch (e) { setErr((e as Error).message); return; }
