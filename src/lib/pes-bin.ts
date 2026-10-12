@@ -111,15 +111,8 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
   // PNG indexado com ate 16 cores: preservar RGBA exato, sem quantizar.
   if (frequency.size <= 16) {
     const colors = [...frequency.values()].map(v => v.rgba);
-    // PES PSP: reservar o ultimo indice (15) para transparencia.
-    // Nao deslocar a cor transparente para o indice zero.
     const transparent = colors.findIndex(c => c[3] === 0);
-    if (transparent >= 0) {
-      colors.splice(transparent, 1);
-      // Preencher os indices de cor antes do slot transparente.
-      while (colors.length < 15) colors.push([0, 0, 0, 255]);
-      colors.push([0, 0, 0, 0]);
-    }
+    if (transparent > 0) colors.unshift(...colors.splice(transparent, 1));
     const lookup = new Map(colors.map((c, i) => [c.join(","), i]));
     colors.forEach((color, i) => setPaletteColor(d, paletteTexture, i, color));
     for (let i = colors.length; i < 16; i++) setPaletteColor(d, paletteTexture, i, [0, 0, 0, 0]);
@@ -135,32 +128,6 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
       d[pos] = i & 1 ? (old & 15) | (idx << 4) : (old & 240) | idx;
     }
     return;
-  }
-  // Letras com desenho novo: separar niveis de cobertura do contorno.
-  // A quantizacao geral abaixo continua responsavel por RGB e indices.
-  // Os numeros 256x128 nao passam por esta normalizacao.
-  if (pix.width === 256 && pix.height === 64 && frequency.size > 16) {
-    const levels = [0, 68, 110, 158, 212, 252, 254, 255];
-    // Usar os MESMOS valores quantizados tanto para montar a paleta
-    // quanto para atribuir indices; caso contrario os contornos divergem.
-    const converted = new ImageData(img.width, img.height);
-    converted.data.set(img.data);
-    const remapped = new Map<string, { rgba: RGBA; count: number }>();
-    for (let i = 0; i < converted.data.length; i += 4) {
-      const a = converted.data[i + 3]!;
-      const nearest = levels.reduce((best, n) =>
-        Math.abs(n - a) < Math.abs(best - a) ? n : best, levels[0]!);
-      converted.data[i + 3] = nearest;
-      const rgba: RGBA = nearest === 0 ? [0, 0, 0, 0] :
-        [converted.data[i]!, converted.data[i + 1]!, converted.data[i + 2]!, nearest];
-      const key = rgba.join(",");
-      const found = remapped.get(key);
-      if (found) found.count++;
-      else remapped.set(key, { rgba, count: 1 });
-    }
-    frequency.clear();
-    for (const [key, value] of remapped) frequency.set(key, value);
-    img = converted;
   }
   const entries = [...frequency.values()].sort((a, b) => b.count - a.count);
   const hasTransparent = entries.some(e => e.rgba[3] === 0);
