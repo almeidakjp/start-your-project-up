@@ -107,12 +107,14 @@ function BinEditor() {
             Math.floor(pix.width / 2), 0, Math.ceil(pix.width / 2), pix.height);
           return shortCtx.getImageData(0, 0, pix.width, pix.height);
         };
-        if (pal === 2) {
-          // Compatibilidade com importacao manual anterior na Paleta 3.
+        if (pal === 2 && !hasShort) {
+          // PNG separado na Paleta 3: preservar a importacao manual de cores.
           importShortColorOnly(bin.data, pix, palTex, hasShort ? makeShortPng() : png);
         } else {
-          importPngWithPalette(bin.data, pix, palTex, png);
-          const imported = getPalette(bin.data, palTex);
+          // PNG completo: importar sempre o desenho compartilhado, mesmo que
+          // a Paleta 3 esteja selecionada na interface.
+          importPngWithPalette(bin.data, pix, bin.textures[0], png);
+          const imported = getPalette(bin.data, bin.textures[0]);
           bin.textures.forEach(texture => {
             imported.forEach((color, i) =>
               setPaletteColor(bin.data, texture, i, [...color] as RGBA)
