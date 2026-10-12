@@ -149,12 +149,12 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
           const delta = (p[0]-c[0])**2 + (p[1]-c[1])**2 + (p[2]-c[2])**2 + 2*(p[3]-c[3])**2;
           if (delta < distance) { distance = delta; best = k; }
         }
-        for (let j = 0; j < 4; j++) sums[best]![j] += entry.rgba[j] * entry.count;
-        sums[best]![4] += entry.count;
+        for (let j = 0; j < 4; j++) sums[best]![j]! += entry.rgba[j]! * entry.count;
+        sums[best]![4]! += entry.count;
       }
       for (let k = start; k < palette.length; k++) {
         const sum = sums[k]!;
-        if (sum[4]) palette[k]! = [0,1,2,3].map(j => Math.round(sum[j] / sum[4])) as RGBA;
+        if (sum[4]!) palette[k]! = [0,1,2,3].map(j => Math.round(sum[j]! / sum[4])) as RGBA;
       }
     }
   }
@@ -208,7 +208,7 @@ export function importShortColorOnly(d: Uint8Array, pix: Tex, paletteTexture: Te
     used.add(((d[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15);
   }
   const distance = (a: number[], b: number[]) =>
-    (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+    (a[0]! - b[0]!) ** 2 + (a[1]! - b[1]!) ** 2 + (a[2]! - b[2]!) ** 2;
   // Os PNGs de camisa e short podem compartilhar cores exatas: manter a
   // correspondencia entre cada indice e sua cor, inclusive contornos.
   current.forEach((color, index) => {
