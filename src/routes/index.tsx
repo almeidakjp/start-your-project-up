@@ -70,30 +70,6 @@ function BinEditor() {
       ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
-        // Letras: exportar e reimportar o mesmo PNG deve ser uma operacao neutra.
-        // O canvas pode arredondar RGB em pixels semitransparentes; comparar
-        // com tolerancia pequena e ignorar RGB de pixels totalmente invisiveis.
-        // Nunca reconstruir indices/paleta se a imagem visivel nao mudou.
-        const original = pix.height === 64 ? toImageData(bin.data, pix, palTex) : null;
-        let unchanged = original !== null;
-        if (original) {
-          for (let i = 0; i < png.data.length; i += 4) {
-            const a = png.data[i + 3], b = original.data[i + 3];
-            if (Math.abs(a - b) > 1) { unchanged = false; break; }
-            if (a > 0 && b > 0 &&
-                (Math.abs(png.data[i] - original.data[i]) > 3 ||
-                 Math.abs(png.data[i + 1] - original.data[i + 1]) > 3 ||
-                 Math.abs(png.data[i + 2] - original.data[i + 2]) > 3)) {
-              unchanged = false; break;
-            }
-          }
-        }
-        if (unchanged) {
-          // Nao tocar em nenhum byte do BIN.
-          setErr("");
-          setVer(v => v + 1);
-          return;
-        }
         if (pal === 2) {
           // Experimento: em atlas completo, isolar os numeros pequenos antes
           // de reutilizar a rotina manual comprovada.
