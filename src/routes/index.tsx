@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importAutoShortColors,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -138,7 +138,7 @@ function BinEditor() {
             );
           });
           if (hasShort && bin.textures[2]) {
-            importShortColorOnly(bin.data, pix, bin.textures[2], makeShortPng());
+            importAutoShortColors(bin.data, pix, bin.textures[2], makeShortPng());
           }
         }
         setErr("");
