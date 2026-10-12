@@ -65,15 +65,52 @@ function BinEditor() {
     img.onload = () => {
       const c = document.createElement("canvas"); c.width = pix.width; c.height = pix.height;
       const ctx = c.getContext("2d")!;
-      // PNG 512x256 -> textura 256x128 sem interpolacao.
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
+        // Detectar a faixa dos numeros grandes pela primeira linha, onde
+        // os pequenos dos PNGs PES PC nao aparecem.
+        const source = document.createElement("canvas");
+        source.width = img.naturalWidth; source.height = img.naturalHeight;
+        const sourceCtx = source.getContext("2d")!;
+        sourceCtx.drawImage(img, 0, 0);
+        const rgba = sourceCtx.getImageData(0, 0, source.width, source.height);
+        const w = source.width, h = source.height;
+        let maxTopX = -1;
+        for (let y = 0; y < Math.floor(h * 0.30); y++) {
+          for (let x = 0; x < w; x++) {
+            if (rgba.data[(y * w + x) * 4 + 3] >= 128) maxTopX = Math.max(maxTopX, x);
+          }
+        }
+        // Para PNGs com os pequenos a direita, a separacao fica apos
+        // o ultimo numero da linha superior, nunca na metade fixa.
+        const split = Math.min(w, maxTopX + Math.max(3, Math.round(w * 0.008)));
+        let rightCount = 0;
+        if (maxTopX >= 0 && split < w * 0.72) {
+          for (let y = Math.floor(h * 0.30); y < h; y++) {
+            for (let x = split; x < w; x++) {
+              if (rgba.data[(y * w + x) * 4 + 3] >= 128) rightCount++;
+            }
+          }
+        }
+        const hasShort = rightCount > Math.max(20, w * h * 0.0003);
+        const shirtWidth = hasShort ? split : w;
+        // Escalar a area completa dos numeros grandes para a textura PSP,
+        // preservando 0 a 9 sem apagar o 4 ou o 9.
+        ctx.drawImage(img, 0, 0, shirtWidth, h, 0, 0, pix.width, pix.height);
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
-        if (pal === 2) importShortColorOnly(bin.data, pix, palTex, png);
-        else {
-          // Uma unica imagem e um unico conjunto de indices para as 3 paletas.
-          // Copiar as 16 entradas tambem preserva a transparencia do PNG.
+        const makeShortPng = () => {
+          const shortCanvas = document.createElement("canvas");
+          shortCanvas.width = pix.width; shortCanvas.height = pix.height;
+          const shortCtx = shortCanvas.getContext("2d")!;
+          shortCtx.imageSmoothingEnabled = false;
+          shortCtx.drawImage(img, split, 0, w - split, h,
+            Math.floor(pix.width / 2), 0, Math.ceil(pix.width / 2), pix.height);
+          return shortCtx.getImageData(0, 0, pix.width, pix.height);
+        };
+        if (pal === 2) {
+          // Compatibilidade com importacao manual anterior na Paleta 3.
+          importShortColorOnly(bin.data, pix, palTex, hasShort ? makeShortPng() : png);
+        } else {
           importPngWithPalette(bin.data, pix, palTex, png);
           const imported = getPalette(bin.data, palTex);
           bin.textures.forEach(texture => {
@@ -81,6 +118,9 @@ function BinEditor() {
               setPaletteColor(bin.data, texture, i, [...color] as RGBA)
             );
           });
+          if (hasShort && bin.textures[2]) {
+            importShortColorOnly(bin.data, pix, bin.textures[2], makeShortPng());
+          }
         }
         setErr("");
       } catch (e) { setErr((e as Error).message); return; }
