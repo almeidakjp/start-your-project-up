@@ -85,27 +85,26 @@ function BinEditor() {
           }
         }
         let split = w;
-        let bestGap = 0;
-        const minX = Math.floor(w * 0.54), maxX = Math.floor(w * 0.77);
+        let hasShort = false;
+        // A separacao correta e a PRIMEIRA faixa vazia depois dos
+        // numeros grandes, nao a maior faixa (que pode ficar entre 01 e 56).
+        const minX = Math.floor(w * 0.54), maxX = Math.floor(w * 0.72);
         for (let x = minX; x < maxX;) {
           if (column[x] !== 0) { x++; continue; }
           const first = x;
           while (x < maxX && column[x] === 0) x++;
-          const gap = x - first;
-          if (gap >= 2 && gap > bestGap) {
-            bestGap = gap;
+          if (x - first < 2) continue;
+          let leftCount = 0, rightCount = 0;
+          for (let i = 0; i < w; i++) {
+            if (i < first) leftCount += column[i];
+            else if (i >= x) rightCount += column[i];
+          }
+          if (leftCount > 100 && rightCount > Math.max(20, w * h * 0.0003)) {
             split = x;
+            hasShort = true;
+            break;
           }
         }
-        let leftCount = 0, rightCount = 0;
-        if (split < w) {
-          for (let x = 0; x < w; x++) {
-            if (x < split) leftCount += column[x];
-            else rightCount += column[x];
-          }
-        }
-        const hasShort = bestGap >= 2 && leftCount > 100 &&
-          rightCount > Math.max(20, w * h * 0.0003);
         // Reduzir o atlas INTEIRO, mantendo as coordenadas originais.
         // Ex.: camisa x=8..315 em 512px vira x=4..157 em 256px.
         // Remover somente a area do short da textura compartilhada.
