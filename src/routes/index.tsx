@@ -106,13 +106,15 @@ function BinEditor() {
         }
         const hasShort = bestGap >= 2 && leftCount > 100 &&
           rightCount > Math.max(20, w * h * 0.0003);
-        const shirtWidth = hasShort ? split : w;
-        // Manter a escala original do atlas (512x256 -> 256x128).
-        // Nao esticar os numeros grandes para ocupar toda a textura.
-        // A regiao direita permanece transparente, sem os numeros pequenos.
-        const destWidth = Math.max(1, Math.round(shirtWidth * pix.width / w));
+        // Reduzir o atlas INTEIRO, mantendo as coordenadas originais.
+        // Ex.: camisa x=8..315 em 512px vira x=4..157 em 256px.
+        // Remover somente a area do short da textura compartilhada.
         ctx.clearRect(0, 0, pix.width, pix.height);
-        ctx.drawImage(img, 0, 0, shirtWidth, h, 0, 0, destWidth, pix.height);
+        ctx.drawImage(img, 0, 0, w, h, 0, 0, pix.width, pix.height);
+        if (hasShort) {
+          const shortStart = Math.ceil(split * pix.width / w);
+          ctx.clearRect(shortStart, 0, pix.width - shortStart, pix.height);
+        }
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
         const makeShortPng = () => {
           const shortCanvas = document.createElement("canvas");
