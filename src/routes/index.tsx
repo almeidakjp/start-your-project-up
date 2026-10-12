@@ -70,50 +70,7 @@ function BinEditor() {
       ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
-        if (pal === 2) {
-          // Importacao MANUAL da Paleta 3. Se o PNG tem numeros grandes
-          // e pequenos, extrair somente a cor predominante dos pequenos.
-          // PNGs ja separados continuam usando a rotina antiga.
-          const srcCanvas = document.createElement("canvas");
-          srcCanvas.width = img.naturalWidth; srcCanvas.height = img.naturalHeight;
-          const srcCtx = srcCanvas.getContext("2d")!;
-          srcCtx.drawImage(img, 0, 0);
-          const source = srcCtx.getImageData(0, 0, srcCanvas.width, srcCanvas.height);
-          const splitX = Math.floor(source.width * 0.62);
-          let leftCount = 0, rightCount = 0;
-          const colors = new Map<string, { count: number; rgb: [number,number,number] }>();
-          for (let y=0; y<source.height; y++) for (let x=0; x<source.width; x++) {
-            const p=(y*source.width+x)*4;
-            if (source.data[p+3]<128) continue;
-            if (x<splitX) leftCount++;
-            else {
-              rightCount++;
-              const rgb: [number,number,number] = [source.data[p],source.data[p+1],source.data[p+2]];
-              const key=rgb.map(v=>v>>4).join(",");
-              const entry=colors.get(key);
-              if(entry) entry.count++;
-              else colors.set(key,{count:1,rgb});
-            }
-          }
-          if (leftCount>100 && rightCount>30 && colors.size) {
-            const dominant=[...colors.values()].sort((a,b)=>b.count-a.count)[0].rgb;
-            const palette=getPalette(bin.data,palTex);
-            const used=new Set<number>();
-            const base=pix.offset+0x80;
-            for(let i=0;i<pix.width*pix.height;i++)
-              used.add(((bin.data[base+(i>>1)]??0)>>((i&1)*4))&15);
-            const luminance=(c:number[])=>c[0]*0.2126+c[1]*0.7152+c[2]*0.0722;
-            const active=palette.map((c,i)=>({c,i})).filter(({c,i})=>used.has(i)&&c[3]>0);
-            const maxLum=Math.max(1,...active.map(({c})=>luminance(c)));
-            for(const {c,i} of active) {
-              const factor=luminance(c)/maxLum < 0.18 ? 0 : 1;
-              setPaletteColor(bin.data,palTex,i,[
-                Math.round(dominant[0]*factor),Math.round(dominant[1]*factor),
-                Math.round(dominant[2]*factor),c[3]
-              ]);
-            }
-          } else importShortColorOnly(bin.data,pix,palTex,png);
-        }
+        if (pal === 2) importShortColorOnly(bin.data, pix, palTex, png);
         else {
           // Uma unica imagem e um unico conjunto de indices para as 3 paletas.
           // Copiar as 16 entradas tambem preserva a transparencia do PNG.
