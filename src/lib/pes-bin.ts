@@ -262,9 +262,11 @@ export function importAutoShortColors(d: Uint8Array, pix: Tex, paletteTexture: T
   current.forEach((color, index) => {
     if (!used.has(index) || color[3] === 0) return;
     const ratio = Math.min(1, brightness(color) / brightest);
-    // Preservar pixels escuros de contorno; recolorir preenchimento sem
-    // aproximar RGB entre cores totalmente diferentes.
-    const rgb = target.map(v => Math.round(v * ratio));
+    // O preenchimento deve receber a cor REAL do short, sem ficar cinza
+    // quando a cor da camisa tiver luminosidade diferente. Somente os
+    // pixels muito escuros (contornos) continuam escuros.
+    const contourFactor = ratio < 0.30 ? ratio / 0.30 : 1;
+    const rgb = target.map(v => Math.round(v * contourFactor));
     setPaletteColor(d, paletteTexture, index, [rgb[0], rgb[1], rgb[2], color[3]]);
   });
 }
