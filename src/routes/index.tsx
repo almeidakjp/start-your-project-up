@@ -87,7 +87,10 @@ function BinEditor() {
             if (x >= w * 0.65) rightCount++;
           }
           // Se o arquivo for somente do short, preservar o fluxo antigo.
-          if (leftCount > 100 && rightCount > 30 && w >= 400) {
+          // Exigir proporcao de atlas conhecida; nao aplicar recorte a PNGs
+          // de dimensoes inesperadas, que podem usar outro layout.
+          const standardAtlas = w === pix.width * 2 && h === pix.height * 2;
+          if (standardAtlas && leftCount > 100 && rightCount > 30) {
             // Localizar uma coluna de separacao com pouca tinta entre os grupos.
             let split = Math.round(w * 0.625), lowest = Infinity;
             for (let x = Math.round(w * 0.57); x <= Math.round(w * 0.68); x++) {
