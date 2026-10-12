@@ -107,9 +107,12 @@ function BinEditor() {
         const hasShort = bestGap >= 2 && leftCount > 100 &&
           rightCount > Math.max(20, w * h * 0.0003);
         const shirtWidth = hasShort ? split : w;
-        // Escalar a area completa dos numeros grandes para a textura PSP,
-        // preservando 0 a 9 sem apagar o 4 ou o 9.
-        ctx.drawImage(img, 0, 0, shirtWidth, h, 0, 0, pix.width, pix.height);
+        // Manter a escala original do atlas (512x256 -> 256x128).
+        // Nao esticar os numeros grandes para ocupar toda a textura.
+        // A regiao direita permanece transparente, sem os numeros pequenos.
+        const destWidth = Math.max(1, Math.round(shirtWidth * pix.width / w));
+        ctx.clearRect(0, 0, pix.width, pix.height);
+        ctx.drawImage(img, 0, 0, shirtWidth, h, 0, 0, destWidth, pix.height);
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
         const makeShortPng = () => {
           const shortCanvas = document.createElement("canvas");
