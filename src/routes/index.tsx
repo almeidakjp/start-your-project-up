@@ -70,8 +70,7 @@ function BinEditor() {
       ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
-        if (pal === 2) throw new Error("Para preservar o desenho, importe o PNG na Paleta 1 ou 2. Na Paleta 3, altere somente as cores");
-        else {
+        {
           // Uma unica imagem e um unico conjunto de indices para as 3 paletas.
           // Copiar as 16 entradas tambem preserva a transparencia do PNG.
           importPngWithPalette(bin.data, pix, palTex, png);
