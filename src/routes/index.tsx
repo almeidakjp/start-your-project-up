@@ -75,24 +75,37 @@ function BinEditor() {
         sourceCtx.drawImage(img, 0, 0);
         const rgba = sourceCtx.getImageData(0, 0, source.width, source.height);
         const w = source.width, h = source.height;
-        let maxTopX = -1;
-        for (let y = 0; y < Math.floor(h * 0.30); y++) {
+        // Procurar uma faixa vertical realmente vazia entre os dois conjuntos.
+        // Os numeros pequenos tambem podem ocupar a primeira linha; por isso
+        // analisar apenas a linha superior causava falsos negativos.
+        const column = new Uint32Array(w);
+        for (let y = 0; y < h; y++) {
           for (let x = 0; x < w; x++) {
-            if (rgba.data[(y * w + x) * 4 + 3] >= 128) maxTopX = Math.max(maxTopX, x);
+            if (rgba.data[(y * w + x) * 4 + 3] >= 128) column[x]++;
           }
         }
-        // Para PNGs com os pequenos a direita, a separacao fica apos
-        // o ultimo numero da linha superior, nunca na metade fixa.
-        const split = Math.min(w, maxTopX + Math.max(3, Math.round(w * 0.008)));
-        let rightCount = 0;
-        if (maxTopX >= 0 && split < w * 0.72) {
-          for (let y = Math.floor(h * 0.30); y < h; y++) {
-            for (let x = split; x < w; x++) {
-              if (rgba.data[(y * w + x) * 4 + 3] >= 128) rightCount++;
-            }
+        let split = w;
+        let bestGap = 0;
+        const minX = Math.floor(w * 0.54), maxX = Math.floor(w * 0.77);
+        for (let x = minX; x < maxX;) {
+          if (column[x] !== 0) { x++; continue; }
+          const first = x;
+          while (x < maxX && column[x] === 0) x++;
+          const gap = x - first;
+          if (gap >= 2 && gap > bestGap) {
+            bestGap = gap;
+            split = x;
           }
         }
-        const hasShort = rightCount > Math.max(20, w * h * 0.0003);
+        let leftCount = 0, rightCount = 0;
+        if (split < w) {
+          for (let x = 0; x < w; x++) {
+            if (x < split) leftCount += column[x];
+            else rightCount += column[x];
+          }
+        }
+        const hasShort = bestGap >= 2 && leftCount > 100 &&
+          rightCount > Math.max(20, w * h * 0.0003);
         const shirtWidth = hasShort ? split : w;
         // Escalar a area completa dos numeros grandes para a textura PSP,
         // preservando 0 a 9 sem apagar o 4 ou o 9.
