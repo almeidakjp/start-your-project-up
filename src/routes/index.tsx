@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importAutoShortColors,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -85,31 +85,35 @@ function BinEditor() {
           }
         }
         let split = w;
-        let bestGap = 0;
-        const minX = Math.floor(w * 0.54), maxX = Math.floor(w * 0.77);
+        let hasShort = false;
+        // A separacao correta e a PRIMEIRA faixa vazia depois dos
+        // numeros grandes, nao a maior faixa (que pode ficar entre 01 e 56).
+        const minX = Math.floor(w * 0.54), maxX = Math.floor(w * 0.72);
         for (let x = minX; x < maxX;) {
           if (column[x] !== 0) { x++; continue; }
           const first = x;
           while (x < maxX && column[x] === 0) x++;
-          const gap = x - first;
-          if (gap >= 2 && gap > bestGap) {
-            bestGap = gap;
+          if (x - first < 2) continue;
+          let leftCount = 0, rightCount = 0;
+          for (let i = 0; i < w; i++) {
+            if (i < first) leftCount += column[i];
+            else if (i >= x) rightCount += column[i];
+          }
+          if (leftCount > 100 && rightCount > Math.max(20, w * h * 0.0003)) {
             split = x;
+            hasShort = true;
+            break;
           }
         }
-        let leftCount = 0, rightCount = 0;
-        if (split < w) {
-          for (let x = 0; x < w; x++) {
-            if (x < split) leftCount += column[x];
-            else rightCount += column[x];
-          }
+        // Reduzir o atlas INTEIRO, mantendo as coordenadas originais.
+        // Ex.: camisa x=8..315 em 512px vira x=4..157 em 256px.
+        // Remover somente a area do short da textura compartilhada.
+        ctx.clearRect(0, 0, pix.width, pix.height);
+        ctx.drawImage(img, 0, 0, w, h, 0, 0, pix.width, pix.height);
+        if (hasShort) {
+          const shortStart = Math.ceil(split * pix.width / w);
+          ctx.clearRect(shortStart, 0, pix.width - shortStart, pix.height);
         }
-        const hasShort = bestGap >= 2 && leftCount > 100 &&
-          rightCount > Math.max(20, w * h * 0.0003);
-        const shirtWidth = hasShort ? split : w;
-        // Escalar a area completa dos numeros grandes para a textura PSP,
-        // preservando 0 a 9 sem apagar o 4 ou o 9.
-        ctx.drawImage(img, 0, 0, shirtWidth, h, 0, 0, pix.width, pix.height);
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
         const makeShortPng = () => {
           const shortCanvas = document.createElement("canvas");
@@ -134,7 +138,7 @@ function BinEditor() {
             );
           });
           if (hasShort && bin.textures[2]) {
-            importShortColorOnly(bin.data, pix, bin.textures[2], makeShortPng());
+            importAutoShortColors(bin.data, pix, bin.textures[2], makeShortPng());
           }
         }
         setErr("");
