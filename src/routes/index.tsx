@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, restoreShortColorOnly,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -30,8 +30,6 @@ function BinEditor() {
   const [err, setErr] = useState("");
   const [bg, setBg] = useState("#1f2a24");
   const canvas = useRef<HTMLCanvasElement>(null);
-  const originalShortPalette = useRef<RGBA[] | null>(null);
-  const originalPixels = useRef<Uint8Array | null>(null);
 
   const pix = bin?.textures.find((t) => t.hasPixels);
   const palTex = bin?.textures[pal];
@@ -44,8 +42,8 @@ function BinEditor() {
 
   const open = async (f?: File) => {
     if (!f) return; setErr("");
-    try { const b = await readBin(await f.arrayBuffer()); originalShortPalette.current = b.textures[2] ? getPalette(b.data, b.textures[2]).map(color => [...color] as RGBA) : null; const source = b.textures.find(t => t.hasPixels); originalPixels.current = source ? b.data.slice(source.offset + 0x80, source.offset + 0x80 + Math.ceil(source.width * source.height / 2)) : null; setBin(b); setName(f.name); setPal(b.textures.indexOf(b.textures.find((t) => t.hasPixels)!)); }
-    catch (e) { originalShortPalette.current = null; originalPixels.current = null; setBin(null); setErr((e as Error).message); }
+    try { const b = await readBin(await f.arrayBuffer()); setBin(b); setName(f.name); setPal(b.textures.indexOf(b.textures.find((t) => t.hasPixels)!)); }
+    catch (e) { setBin(null); setErr((e as Error).message); }
   };
 
   const save = async () => {
@@ -72,7 +70,7 @@ function BinEditor() {
       ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
-        if (pal === 2) throw new Error("Para preservar o desenho, importe o PNG na Paleta 1 ou 2. Na Paleta 3, altere somente as cores ou use o botao de restaurar cor do short.");
+        if (pal === 2) throw new Error("Para preservar o desenho, importe o PNG na Paleta 1 ou 2. Na Paleta 3, altere somente as cores");
         else {
           // Uma unica imagem e um unico conjunto de indices para as 3 paletas.
           // Copiar as 16 entradas tambem preserva a transparencia do PNG.
@@ -90,16 +88,6 @@ function BinEditor() {
     };
     img.onerror = () => setErr("Não foi possível abrir o PNG.");
     img.src = URL.createObjectURL(f);
-  };
-
-  const restoreShortColors = () => {
-    if (!bin?.textures[2] || !pix || !originalShortPalette.current || !originalPixels.current) return;
-    try {
-      restoreShortColorOnly(bin.data, pix, bin.textures[2], originalPixels.current, originalShortPalette.current);
-      setPal(2);
-      setErr("");
-      setVer(v => v + 1);
-    } catch (e) { setErr((e as Error).message); }
   };
 
   const colors = bin && palTex ? getPalette(bin.data, palTex) : [];
@@ -163,7 +151,6 @@ function BinEditor() {
           </section>
 
           <section className="mt-4 grid grid-cols-2 gap-2">
-            <button onClick={restoreShortColors} disabled={!originalShortPalette.current} className="col-span-2 rounded-md border border-primary py-3 text-sm font-semibold hover:bg-accent disabled:opacity-50">Aplicar cor original do short (sem alterar desenho)</button>
             <button onClick={exportPng} className="rounded-md bg-secondary py-3 text-sm font-semibold hover:bg-accent">Exportar PNG</button>
             <label className="cursor-pointer rounded-md bg-secondary py-3 text-center text-sm font-semibold hover:bg-accent">
               Importar PNG
