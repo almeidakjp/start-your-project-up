@@ -89,41 +89,6 @@ function BinEditor() {
     img.src = URL.createObjectURL(f);
   };
 
-  const importOnlyColors = (f?: File) => {
-    if (!f || !bin || !pix || !palTex) return;
-    const img = new Image();
-    img.onload = () => {
-      const c = document.createElement("canvas");
-      c.width = pix.width; c.height = pix.height;
-      const ctx = c.getContext("2d")!;
-      ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(img, 0, 0, pix.width, pix.height);
-      const rgba = ctx.getImageData(0, 0, pix.width, pix.height).data;
-      const base = pix.offset + 0x80;
-      const sums = Array.from({ length: 16 }, () => [0, 0, 0, 0, 0]);
-      for (let i = 0; i < pix.width * pix.height; i++) {
-        const index = ((bin.data[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15;
-        const p = i * 4;
-        const weight = rgba[p + 3] / 255;
-        if (weight <= 0) continue;
-        for (let j = 0; j < 4; j++) sums[index][j] += rgba[p + j] * weight;
-        sums[index][4] += weight;
-      }
-      const current = getPalette(bin.data, palTex);
-      for (let i = 0; i < 16; i++) {
-        if (!sums[i][4]) continue;
-        const next = [0, 1, 2, 3].map(j => Math.round(sums[i][j] / sums[i][4])) as RGBA;
-        // Preserve transparency of the existing indexed drawing.
-        setPaletteColor(bin.data, palTex, i, [next[0], next[1], next[2], current[i][3]]);
-      }
-      setErr("");
-      setVer(v => v + 1);
-      URL.revokeObjectURL(img.src);
-    };
-    img.onerror = () => setErr("Não foi possível abrir o PNG de cores.");
-    img.src = URL.createObjectURL(f);
-  };
-
   const colors = bin && palTex ? getPalette(bin.data, palTex) : [];
   const setColor = (i: number, c: RGBA) => { setPaletteColor(bin!.data, palTex!, i, c); setVer((v) => v + 1); };
 
@@ -185,10 +150,6 @@ function BinEditor() {
           </section>
 
           <section className="mt-4 grid grid-cols-2 gap-2">
-            <label className="col-span-2 cursor-pointer rounded-md border border-primary py-3 text-center text-sm font-semibold hover:bg-accent">
-              Importar somente cores (manter números)
-              <input type="file" accept="image/png" className="hidden" onChange={(e) => { importOnlyColors(e.target.files?.[0]); e.target.value = ""; }} />
-            </label>
             <button onClick={exportPng} className="rounded-md bg-secondary py-3 text-sm font-semibold hover:bg-accent">Exportar PNG</button>
             <label className="cursor-pointer rounded-md bg-secondary py-3 text-center text-sm font-semibold hover:bg-accent">
               Importar PNG
