@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importRightSidePalette,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -70,7 +70,21 @@ function BinEditor() {
       ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
-        if (pal === 2) importShortColorOnly(bin.data, pix, palTex, png);
+        // PNG completo: a direita contem numeros pequenos com cores do short.
+        // PNG separado continua usando o procedimento manual ja aprovado.
+        const original = document.createElement("canvas");
+        original.width = img.naturalWidth; original.height = img.naturalHeight;
+        const originalCtx = original.getContext("2d")!;
+        originalCtx.drawImage(img, 0, 0);
+        const source = originalCtx.getImageData(0, 0, original.width, original.height);
+        let left = 0, right = 0;
+        for (let y=0; y<source.height; y++) for (let x=0; x<source.width; x++) {
+          if (source.data[(y*source.width+x)*4+3] < 128) continue;
+          if (x < source.width*0.60) left++;
+          if (x >= source.width*0.63) right++;
+        }
+        const fullAtlas = left > 100 && right > 30;
+        if (pal === 2 && !fullAtlas) importShortColorOnly(bin.data, pix, palTex, png);
         else {
           // Uma unica imagem e um unico conjunto de indices para as 3 paletas.
           // Copiar as 16 entradas tambem preserva a transparencia do PNG.
@@ -81,6 +95,8 @@ function BinEditor() {
               setPaletteColor(bin.data, texture, i, [...color] as RGBA)
             );
           });
+          if (fullAtlas && bin.textures[2])
+            importRightSidePalette(bin.data, pix, bin.textures[2], source);
         }
         setErr("");
       } catch (e) { setErr((e as Error).message); return; }
