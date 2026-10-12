@@ -97,15 +97,20 @@ function BinEditor() {
               }
               if (ink < lowest) { lowest = ink; split = x; }
             }
+            // Manter o atlas em suas coordenadas originais: apenas tornar
+            // transparente a area da camisa, como no PNG manual do short.
             const isolated = document.createElement("canvas");
-            isolated.width = pix.width; isolated.height = pix.height;
+            isolated.width = w; isolated.height = h;
             const isolatedCtx = isolated.getContext("2d")!;
-            isolatedCtx.imageSmoothingEnabled = false;
-            // A rotina manual le apenas a metade direita: copiar o short ali.
-            isolatedCtx.drawImage(img, split, 0, w - split, h,
-              Math.floor(pix.width / 2), 0, Math.ceil(pix.width / 2), pix.height);
+            isolatedCtx.drawImage(img, 0, 0);
+            isolatedCtx.clearRect(0, 0, split, h);
+            const reduced = document.createElement("canvas");
+            reduced.width = pix.width; reduced.height = pix.height;
+            const reducedCtx = reduced.getContext("2d")!;
+            reducedCtx.imageSmoothingEnabled = false;
+            reducedCtx.drawImage(isolated, 0, 0, pix.width, pix.height);
             importShortColorOnly(bin.data, pix, palTex,
-              isolatedCtx.getImageData(0, 0, pix.width, pix.height));
+              reducedCtx.getImageData(0, 0, pix.width, pix.height));
           } else {
             importShortColorOnly(bin.data, pix, palTex, png);
           }
