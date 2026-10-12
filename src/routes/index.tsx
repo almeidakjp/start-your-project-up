@@ -146,12 +146,9 @@ function BinEditor() {
           // Uma unica imagem e um unico conjunto de indices para as 3 paletas.
           // Copiar as 16 entradas tambem preserva a transparencia do PNG.
           importPngWithPalette(bin.data, pix, palTex, png);
-          const imported = getPalette(bin.data, palTex);
-          bin.textures.forEach(texture => {
-            imported.forEach((color, i) =>
-              setPaletteColor(bin.data, texture, i, [...color] as RGBA)
-            );
-          });
+          // Letras: nao sobrescrever as outras paletas com as cores da
+          // paleta selecionada. Cada paleta representa uma variante do kit.
+          // Apenas a textura/paleta escolhida e modificada pelo importador.
         }
         setErr("");
       } catch (e) { setErr((e as Error).message); return; }
