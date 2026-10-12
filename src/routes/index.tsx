@@ -86,7 +86,7 @@ function BinEditor() {
           const w = source.width, h = source.height;
           let leftCount = 0, rightCount = 0;
           for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
-            if (sourceData.data[(y * w + x) * 4 + 3] < 128) continue;
+            if (sourceData.data[(y * w + x) * 4 + 3]! < 128) continue;
             if (x < w * 0.55) leftCount++;
             if (x >= w * 0.65) rightCount++;
           }
@@ -100,7 +100,7 @@ function BinEditor() {
             for (let x = Math.round(w * 0.57); x <= Math.round(w * 0.68); x++) {
               let ink = 0;
               for (let y = 0; y < h; y++) {
-                if (sourceData.data[(y * w + x) * 4 + 3] >= 128) ink++;
+                if (sourceData.data[(y * w + x) * 4 + 3]! >= 128) ink++;
               }
               if (ink < lowest) { lowest = ink; split = x; }
             }
@@ -152,7 +152,7 @@ function BinEditor() {
       setLetterAlphaTest(true);
     } else {
       letterAlphaBackup.current?.forEach((palette, t) =>
-        palette.forEach((c, i) => setPaletteColor(bin.data, bin.textures[t], i, c)));
+        palette.forEach((c, i) => setPaletteColor(bin.data, bin.textures[t]!, i, c)));
       letterAlphaBackup.current = null;
       setLetterAlphaTest(false);
     }

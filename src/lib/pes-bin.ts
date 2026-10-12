@@ -101,8 +101,8 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
     throw new Error("PNG precisa ter as dimensões originais da textura");
   const frequency = new Map<string, { rgba: RGBA; count: number }>();
   for (let i = 0; i < img.data.length; i += 4) {
-    const a = img.data[i + 3];
-    const rgba: RGBA = a < 8 ? [0, 0, 0, 0] : [img.data[i], img.data[i + 1], img.data[i + 2], a];
+    const a = img.data[i + 3]!;
+    const rgba: RGBA = a < 8 ? [0, 0, 0, 0] : [img.data[i]!, img.data[i + 1]!, img.data[i + 2]!, a];
     const key = rgba.join(",");
     const item = frequency.get(key);
     if (item) item.count++;
@@ -119,9 +119,9 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
     const base = pix.offset + 0x80;
     for (let i = 0; i < pix.width * pix.height; i++) {
       const p = i * 4;
-      const rgba: RGBA = img.data[p + 3] < 8
+      const rgba: RGBA = img.data[p + 3]! < 8
         ? [0, 0, 0, 0]
-        : [img.data[p], img.data[p + 1], img.data[p + 2], img.data[p + 3]];
+        : [img.data[p]!, img.data[p + 1]!, img.data[p + 2]!, img.data[p + 3]!];
       const idx = lookup.get(rgba.join(","));
       if (idx === undefined) throw new Error("Cor nao encontrada na paleta.");
       const pos = base + (i >> 1), old = d[pos] ?? 0;
@@ -145,16 +145,16 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
         if (entry.rgba[3] === 0) continue;
         let best = start, distance = Infinity;
         for (let k = start; k < palette.length; k++) {
-          const p = palette[k], c = entry.rgba;
+          const p = palette[k]!, c = entry.rgba;
           const delta = (p[0]-c[0])**2 + (p[1]-c[1])**2 + (p[2]-c[2])**2 + 2*(p[3]-c[3])**2;
           if (delta < distance) { distance = delta; best = k; }
         }
-        for (let j = 0; j < 4; j++) sums[best][j] += entry.rgba[j] * entry.count;
-        sums[best][4] += entry.count;
+        for (let j = 0; j < 4; j++) sums[best]![j]! += entry.rgba[j]! * entry.count;
+        sums[best]![4]! += entry.count;
       }
       for (let k = start; k < palette.length; k++) {
-        const sum = sums[k];
-        if (sum[4]) palette[k] = [0,1,2,3].map(j => Math.round(sum[j] / sum[4])) as RGBA;
+        const sum = sums[k]!;
+        if (sum[4]!) palette[k] = [0,1,2,3].map(j => Math.round(sum[j]! / sum[4]!)) as RGBA;
       }
     }
   }
@@ -164,11 +164,11 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
   // pode estar em outra textura, então os índices são escritos aqui.
   const base = pix.offset + 0x80;
   for (let i = 0; i < pix.width * pix.height; i++) {
-    const p = i * 4, a = img.data[p + 3];
-    const c: RGBA = a < 8 ? [0,0,0,0] : [img.data[p],img.data[p+1],img.data[p+2],a];
+    const p = i * 4, a = img.data[p + 3]!;
+    const c: RGBA = a < 8 ? [0,0,0,0] : [img.data[p]!,img.data[p+1]!,img.data[p+2]!,a];
     let best = 0, distance = Infinity;
     for (let k = 0; k < 16; k++) {
-      const v = palette[k];
+      const v = palette[k]!;
       const delta = (v[0]-c[0])**2+(v[1]-c[1])**2+(v[2]-c[2])**2+2*(v[3]-c[3])**2;
       if (delta < distance) { distance = delta; best = k; }
     }
@@ -191,8 +191,8 @@ export function importShortColorOnly(d: Uint8Array, pix: Tex, paletteTexture: Te
   for (let y = 0; y < img.height; y++) {
     for (let x = Math.floor(img.width / 2); x < img.width; x++) {
       const p = (y * img.width + x) * 4;
-      if (img.data[p + 3] < 128) continue;
-      const rgb: [number, number, number] = [img.data[p], img.data[p + 1], img.data[p + 2]];
+      if (img.data[p + 3]! < 128) continue;
+      const rgb: [number, number, number] = [img.data[p]!, img.data[p + 1]!, img.data[p + 2]!];
       const key = rgb.join(",");
       const item = frequency.get(key);
       if (item) item.count++;
@@ -208,12 +208,12 @@ export function importShortColorOnly(d: Uint8Array, pix: Tex, paletteTexture: Te
     used.add(((d[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15);
   }
   const distance = (a: number[], b: number[]) =>
-    (a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2 + (a[2] - b[2]) ** 2;
+    (a[0]! - b[0]!) ** 2 + (a[1]! - b[1]!) ** 2 + (a[2]! - b[2]!) ** 2;
   // Os PNGs de camisa e short podem compartilhar cores exatas: manter a
   // correspondencia entre cada indice e sua cor, inclusive contornos.
   current.forEach((color, index) => {
     if (!used.has(index) || color[3] === 0) return;
-    let best = candidates[0];
+    let best = candidates[0]!;
     let minDist = Infinity;
     for (const candidate of candidates) {
       const d2 = distance(color, candidate.rgb);
