@@ -108,27 +108,6 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
     if (item) item.count++;
     else frequency.set(key, { rgba, count: 1 });
   }
-  // PNGs ja indexados com ate 16 cores nao devem passar por quantizacao.
-  // Preservar RGBA exato, inclusive alpha, evita perder os detalhes da arte.
-  if (frequency.size <= 16) {
-    const colors = [...frequency.values()].map(entry => entry.rgba);
-    colors.sort((a, b) => (a[3] === 0 ? -1 : b[3] === 0 ? 1 : 0));
-    const lookup = new Map(colors.map((color, index) => [color.join(","), index]));
-    colors.forEach((color, index) => setPaletteColor(d, paletteTexture, index, color));
-    for (let k = colors.length; k < 16; k++) setPaletteColor(d, paletteTexture, k, [0, 0, 0, 0]);
-    const base = pix.offset + 0x80;
-    for (let i = 0; i < pix.width * pix.height; i++) {
-      const p = i * 4;
-      const rgba: RGBA = img.data[p + 3] < 8
-        ? [0, 0, 0, 0]
-        : [img.data[p], img.data[p + 1], img.data[p + 2], img.data[p + 3]];
-      const index = lookup.get(rgba.join(","));
-      if (index === undefined) throw new Error("Cor do PNG nao encontrada na paleta.");
-      const pos = base + (i >> 1), old = d[pos] ?? 0;
-      d[pos] = (i & 1) ? (old & 15) | (index << 4) : (old & 240) | index;
-    }
-    return;
-  }
   const entries = [...frequency.values()].sort((a, b) => b.count - a.count);
   const hasTransparent = entries.some(e => e.rgba[3] === 0);
   const palette: RGBA[] = hasTransparent ? [[0, 0, 0, 0]] : [];
@@ -178,32 +157,32 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
 }
 
 /**
- * Recolore os indices VISIVEIS da paleta 3 sem tocar no mapa de pixels.
- * A cor vem da paleta original do short, ponderada pelos pixels originalmente
- * visiveis. O alpha do desenho importado permanece intacto.
+ * PES PSP: a paleta 3 (short) usa os mesmos indices do desenho principal.
+ * Extrai a cor predominante dos pixels visiveis na metade direita do PNG
+ * de PES PC e recolore somente os indices ja visiveis da paleta 3.
+ * Nao altera pixels compartilhados, transparencias nem outras paletas.
  */
-export function restoreShortColorOnly(
-  d: Uint8Array, pix: Tex, shortTex: Tex, originalPixels: Uint8Array,
-  originalPalette: RGBA[]
-) {
-  const counts = new Array<number>(16).fill(0);
+export function importShortColorOnly(d: Uint8Array, pix: Tex, paletteTexture: Tex, img: ImageData) {
+  const frequency = new Map<string, { color: RGBA; count: number }>();
+  for (let y = 0; y < img.height; y++) {
+    for (let x = Math.floor(img.width / 2); x < img.width; x++) {
+      const i = (y * img.width + x) * 4;
+      if (img.data[i + 3] < 128) continue;
+      const c: RGBA = [img.data[i], img.data[i + 1], img.data[i + 2], 255];
+      const key = c.slice(0, 3).map(v => Math.round(v / 8)).join(",");
+      const found = frequency.get(key);
+      if (found) found.count++; else frequency.set(key, { color: c, count: 1 });
+    }
+  }
+  if (!frequency.size) throw new Error("Nenhum numero visivel encontrado na metade direita do PNG do short.");
+  const dominant = [...frequency.values()].sort((a, b) => b.count - a.count)[0].color;
+  const pal = getPalette(d, paletteTexture);
+  const used = new Set<number>();
   const base = pix.offset + 0x80;
   for (let i = 0; i < pix.width * pix.height; i++) {
-    const idx = (originalPixels[i >> 1] >> ((i & 1) * 4)) & 15;
-    if (originalPalette[idx][3] > 8) counts[idx]++;
-  }
-  let sourceIndex = -1;
-  for (let i = 0; i < 16; i++)
-    if (sourceIndex < 0 || counts[i] > counts[sourceIndex]) sourceIndex = i;
-  if (sourceIndex < 0 || !counts[sourceIndex])
-    throw new Error("A paleta original do short nao possui pixels visiveis.");
-  const rgb = originalPalette[sourceIndex];
-  const current = getPalette(d, shortTex);
-  const used = new Set<number>();
-  for (let i = 0; i < pix.width * pix.height; i++)
     used.add(((d[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15);
-  current.forEach((c, i) => {
-    if (used.has(i) && c[3] > 8)
-      setPaletteColor(d, shortTex, i, [rgb[0], rgb[1], rgb[2], c[3]]);
+  }
+  pal.forEach((c, i) => {
+    if (used.has(i) && c[3] > 0) setPaletteColor(d, paletteTexture, i, [dominant[0], dominant[1], dominant[2], c[3]]);
   });
 }
