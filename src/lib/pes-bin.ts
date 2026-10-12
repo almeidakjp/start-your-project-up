@@ -197,6 +197,17 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
       }
     }
   }
+  // Diagnostico das letras: reservar uma entrada realmente opaca quando
+  // houver pixels opacos no PNG, evitando que a media apague todos eles.
+  // A textura dos numeros nao passa por este caminho.
+  if (pix.width === 256 && pix.height === 64) {
+    const opaque = [...frequency.values()].filter(e => e.rgba[3] === 255)
+      .sort((a, b) => b.count - a.count);
+    if (opaque.length && !palette.some(c => c[3] === 255)) {
+      const target = palette.length - 1;
+      if (target >= start) palette[target] = [...opaque[0].rgba] as RGBA;
+    }
+  }
   while (palette.length < 16) palette.push([0, 0, 0, 0]);
   palette.forEach((color, i) => setPaletteColor(d, paletteTexture, i, color));
   // fromImageData usa a paleta da textura de pixels; a paleta selecionada
