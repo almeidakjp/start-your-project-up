@@ -30,8 +30,6 @@ function BinEditor() {
   const [err, setErr] = useState("");
   const [bg, setBg] = useState("#1f2a24");
   const canvas = useRef<HTMLCanvasElement>(null);
-  const letterAlphaBackup = useRef<RGBA[][] | null>(null);
-  const [letterAlphaTest, setLetterAlphaTest] = useState(false);
 
   const pix = bin?.textures.find((t) => t.hasPixels);
   const palTex = bin?.textures[pal];
@@ -44,7 +42,6 @@ function BinEditor() {
 
   const open = async (f?: File) => {
     if (!f) return; setErr("");
-    letterAlphaBackup.current = null; setLetterAlphaTest(false);
     try { const b = await readBin(await f.arrayBuffer()); setBin(b); setName(f.name); setPal(b.textures.indexOf(b.textures.find((t) => t.hasPixels)!)); }
     catch (e) { setBin(null); setErr((e as Error).message); }
   };
@@ -64,7 +61,6 @@ function BinEditor() {
 
   const importPng = (f?: File) => {
     if (!f || !bin || !pix || !palTex) return;
-    letterAlphaBackup.current = null; setLetterAlphaTest(false);
     const img = new Image();
     img.onload = () => {
       const c = document.createElement("canvas"); c.width = pix.width; c.height = pix.height;
@@ -86,7 +82,7 @@ function BinEditor() {
           const w = source.width, h = source.height;
           let leftCount = 0, rightCount = 0;
           for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
-            if (sourceData.data[(y * w + x) * 4 + 3]! < 128) continue;
+            if (sourceData.data[(y * w + x) * 4 + 3] < 128) continue;
             if (x < w * 0.55) leftCount++;
             if (x >= w * 0.65) rightCount++;
           }
@@ -100,7 +96,7 @@ function BinEditor() {
             for (let x = Math.round(w * 0.57); x <= Math.round(w * 0.68); x++) {
               let ink = 0;
               for (let y = 0; y < h; y++) {
-                if (sourceData.data[(y * w + x) * 4 + 3]! >= 128) ink++;
+                if (sourceData.data[(y * w + x) * 4 + 3] >= 128) ink++;
               }
               if (ink < lowest) { lowest = ink; split = x; }
             }
@@ -139,24 +135,6 @@ function BinEditor() {
     };
     img.onerror = () => setErr("Não foi possível abrir o PNG.");
     img.src = URL.createObjectURL(f);
-  };
-
-  const toggleLetterAlpha = () => {
-    if (!bin || !pix || pix.height !== 64) return;
-    if (!letterAlphaTest) {
-      letterAlphaBackup.current = bin.textures.map(t => getPalette(bin.data, t));
-      bin.textures.forEach(t => getPalette(bin.data, t).forEach((c, i) => {
-        // Diagnostico reversivel: nao tornar visiveis indices transparentes.
-        if (c[3] > 0) setPaletteColor(bin.data, t, i, [c[0], c[1], c[2], 255]);
-      }));
-      setLetterAlphaTest(true);
-    } else {
-      letterAlphaBackup.current?.forEach((palette, t) =>
-        palette.forEach((c, i) => setPaletteColor(bin.data, bin.textures[t]!, i, c)));
-      letterAlphaBackup.current = null;
-      setLetterAlphaTest(false);
-    }
-    setVer(v => v + 1);
   };
 
   const colors = bin && palTex ? getPalette(bin.data, palTex) : [];
@@ -218,17 +196,6 @@ function BinEditor() {
             </div>
             <p className="mt-2 text-xs text-muted-foreground">A barrinha embaixo de cada cor controla a transparência.</p>
           </section>
-
-          {pix.height === 64 && (
-            <div className="mt-3 rounded-xl border bg-card p-3">
-              <p className="text-sm font-semibold">Teste de transparência das letras</p>
-              <p className="mt-1 text-xs text-muted-foreground">Experimento: força alfa 255 nas cores visíveis. Não altera os pixels nem o RGB. Toque novamente para restaurar a paleta anterior.</p>
-              <button type="button" onClick={toggleLetterAlpha}
-                className="mt-3 w-full rounded-md border border-primary px-3 py-2 text-sm font-semibold">
-                {letterAlphaTest ? "Restaurar transparência anterior" : "Testar letras com alfa 255"}
-              </button>
-            </div>
-          )}
 
           <section className="mt-4 grid grid-cols-2 gap-2">
             <button onClick={exportPng} className="rounded-md bg-secondary py-3 text-sm font-semibold hover:bg-accent">Exportar PNG</button>
