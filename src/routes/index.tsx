@@ -70,7 +70,54 @@ function BinEditor() {
       ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
-        if (pal === 2) importShortColorOnly(bin.data, pix, palTex, png);
+        if (pal === 2) {
+          // Experimento: em atlas completo, isolar os numeros pequenos antes
+          // de reutilizar a rotina manual comprovada.
+          const source = document.createElement("canvas");
+          source.width = img.naturalWidth;
+          source.height = img.naturalHeight;
+          const sourceCtx = source.getContext("2d")!;
+          sourceCtx.drawImage(img, 0, 0);
+          const sourceData = sourceCtx.getImageData(0, 0, source.width, source.height);
+          const w = source.width, h = source.height;
+          let leftCount = 0, rightCount = 0;
+          for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
+            if (sourceData.data[(y * w + x) * 4 + 3] < 128) continue;
+            if (x < w * 0.55) leftCount++;
+            if (x >= w * 0.65) rightCount++;
+          }
+          // Se o arquivo for somente do short, preservar o fluxo antigo.
+          // Exigir proporcao de atlas conhecida; nao aplicar recorte a PNGs
+          // de dimensoes inesperadas, que podem usar outro layout.
+          const standardAtlas = w === pix.width * 2 && h === pix.height * 2;
+          if (standardAtlas && leftCount > 100 && rightCount > 30) {
+            // Localizar uma coluna de separacao com pouca tinta entre os grupos.
+            let split = Math.round(w * 0.625), lowest = Infinity;
+            for (let x = Math.round(w * 0.57); x <= Math.round(w * 0.68); x++) {
+              let ink = 0;
+              for (let y = 0; y < h; y++) {
+                if (sourceData.data[(y * w + x) * 4 + 3] >= 128) ink++;
+              }
+              if (ink < lowest) { lowest = ink; split = x; }
+            }
+            // Manter o atlas em suas coordenadas originais: apenas tornar
+            // transparente a area da camisa, como no PNG manual do short.
+            const isolated = document.createElement("canvas");
+            isolated.width = w; isolated.height = h;
+            const isolatedCtx = isolated.getContext("2d")!;
+            isolatedCtx.drawImage(img, 0, 0);
+            isolatedCtx.clearRect(0, 0, split, h);
+            const reduced = document.createElement("canvas");
+            reduced.width = pix.width; reduced.height = pix.height;
+            const reducedCtx = reduced.getContext("2d")!;
+            reducedCtx.imageSmoothingEnabled = false;
+            reducedCtx.drawImage(isolated, 0, 0, pix.width, pix.height);
+            importShortColorOnly(bin.data, pix, palTex,
+              reducedCtx.getImageData(0, 0, pix.width, pix.height));
+          } else {
+            importShortColorOnly(bin.data, pix, palTex, png);
+          }
+        }
         else {
           // Uma unica imagem e um unico conjunto de indices para as 3 paletas.
           // Copiar as 16 entradas tambem preserva a transparencia do PNG.
