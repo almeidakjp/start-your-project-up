@@ -129,6 +129,33 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
     }
     return;
   }
+  // Experimento para letras 256x64: quantizar alfa numa escala de borda
+  // inspirada na textura original do PES PSP, mantendo RGB do PNG.
+  // Nao afeta numeros nem PNGs com ate 16 cores.
+  if (pix.width === 256 && pix.height === 64) {
+    const alphaLevels = [0, 68, 110, 158, 212, 252, 254, 255];
+    const quantized = new ImageData(img.width, img.height);
+    for (let i = 0; i < img.data.length; i += 4) {
+      const a = img.data[i + 3];
+      const mapped = a < 8 ? 0 : alphaLevels.reduce((best, x) =>
+        Math.abs(x - a) < Math.abs(best - a) ? x : best, alphaLevels[0]);
+      quantized.data[i] = img.data[i];
+      quantized.data[i + 1] = img.data[i + 1];
+      quantized.data[i + 2] = img.data[i + 2];
+      quantized.data[i + 3] = mapped;
+    }
+    img = quantized;
+    frequency.clear();
+    for (let i = 0; i < img.data.length; i += 4) {
+      const a = img.data[i + 3];
+      const rgba: RGBA = a === 0 ? [0, 0, 0, 0] :
+        [img.data[i], img.data[i + 1], img.data[i + 2], a];
+      const key = rgba.join(",");
+      const item = frequency.get(key);
+      if (item) item.count++;
+      else frequency.set(key, { rgba, count: 1 });
+    }
+  }
   const entries = [...frequency.values()].sort((a, b) => b.count - a.count);
   const hasTransparent = entries.some(e => e.rgba[3] === 0);
   const palette: RGBA[] = hasTransparent ? [[0, 0, 0, 0]] : [];
