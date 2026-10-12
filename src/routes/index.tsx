@@ -70,7 +70,46 @@ function BinEditor() {
       ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
-        if (pal === 2) importShortColorOnly(bin.data, pix, palTex, png);
+        if (pal === 2) {
+          // Experimento: em atlas completo, isolar os numeros pequenos antes
+          // de reutilizar a rotina manual comprovada.
+          const source = document.createElement("canvas");
+          source.width = img.naturalWidth;
+          source.height = img.naturalHeight;
+          const sourceCtx = source.getContext("2d")!;
+          sourceCtx.drawImage(img, 0, 0);
+          const sourceData = sourceCtx.getImageData(0, 0, source.width, source.height);
+          const w = source.width, h = source.height;
+          let leftCount = 0, rightCount = 0;
+          for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
+            if (sourceData.data[(y * w + x) * 4 + 3] < 128) continue;
+            if (x < w * 0.55) leftCount++;
+            if (x >= w * 0.65) rightCount++;
+          }
+          // Se o arquivo for somente do short, preservar o fluxo antigo.
+          if (leftCount > 100 && rightCount > 30 && w >= 400) {
+            // Localizar uma coluna de separacao com pouca tinta entre os grupos.
+            let split = Math.round(w * 0.625), lowest = Infinity;
+            for (let x = Math.round(w * 0.57); x <= Math.round(w * 0.68); x++) {
+              let ink = 0;
+              for (let y = 0; y < h; y++) {
+                if (sourceData.data[(y * w + x) * 4 + 3] >= 128) ink++;
+              }
+              if (ink < lowest) { lowest = ink; split = x; }
+            }
+            const isolated = document.createElement("canvas");
+            isolated.width = pix.width; isolated.height = pix.height;
+            const isolatedCtx = isolated.getContext("2d")!;
+            isolatedCtx.imageSmoothingEnabled = false;
+            // A rotina manual le apenas a metade direita: copiar o short ali.
+            isolatedCtx.drawImage(img, split, 0, w - split, h,
+              Math.floor(pix.width / 2), 0, Math.ceil(pix.width / 2), pix.height);
+            importShortColorOnly(bin.data, pix, palTex,
+              isolatedCtx.getImageData(0, 0, pix.width, pix.height));
+          } else {
+            importShortColorOnly(bin.data, pix, palTex, png);
+          }
+        }
         else {
           // Uma unica imagem e um unico conjunto de indices para as 3 paletas.
           // Copiar as 16 entradas tambem preserva a transparencia do PNG.
