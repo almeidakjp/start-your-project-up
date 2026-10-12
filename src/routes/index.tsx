@@ -30,6 +30,7 @@ function BinEditor() {
   const [err, setErr] = useState("");
   const [bg, setBg] = useState("#1f2a24");
   const canvas = useRef<HTMLCanvasElement>(null);
+  const originalShortPalette = useRef<RGBA[] | null>(null);
 
   const pix = bin?.textures.find((t) => t.hasPixels);
   const palTex = bin?.textures[pal];
@@ -42,8 +43,8 @@ function BinEditor() {
 
   const open = async (f?: File) => {
     if (!f) return; setErr("");
-    try { const b = await readBin(await f.arrayBuffer()); setBin(b); setName(f.name); setPal(b.textures.indexOf(b.textures.find((t) => t.hasPixels)!)); }
-    catch (e) { setBin(null); setErr((e as Error).message); }
+    try { const b = await readBin(await f.arrayBuffer()); originalShortPalette.current = b.textures[2] ? getPalette(b.data, b.textures[2]).map(color => [...color] as RGBA) : null; setBin(b); setName(f.name); setPal(b.textures.indexOf(b.textures.find((t) => t.hasPixels)!)); }
+    catch (e) { originalShortPalette.current = null; setBin(null); setErr((e as Error).message); }
   };
 
   const save = async () => {
@@ -88,6 +89,19 @@ function BinEditor() {
     };
     img.onerror = () => setErr("Não foi possível abrir o PNG.");
     img.src = URL.createObjectURL(f);
+  };
+
+  const restoreShortColors = () => {
+    if (!bin?.textures[2] || !originalShortPalette.current) return;
+    const short = bin.textures[2];
+    const current = getPalette(bin.data, short);
+    originalShortPalette.current.forEach((color, i) => {
+      // Restaurar somente RGB: nao tocar no desenho compartilhado nem na transparencia atual.
+      setPaletteColor(bin.data, short, i, [color[0], color[1], color[2], current[i][3]]);
+    });
+    setPal(2);
+    setErr("");
+    setVer(v => v + 1);
   };
 
   const colors = bin && palTex ? getPalette(bin.data, palTex) : [];
@@ -151,6 +165,7 @@ function BinEditor() {
           </section>
 
           <section className="mt-4 grid grid-cols-2 gap-2">
+            <button onClick={restoreShortColors} disabled={!originalShortPalette.current} className="col-span-2 rounded-md border border-primary py-3 text-sm font-semibold hover:bg-accent disabled:opacity-50">Copiar cores originais do short (Paleta 3)</button>
             <button onClick={exportPng} className="rounded-md bg-secondary py-3 text-sm font-semibold hover:bg-accent">Exportar PNG</button>
             <label className="cursor-pointer rounded-md bg-secondary py-3 text-center text-sm font-semibold hover:bg-accent">
               Importar PNG
