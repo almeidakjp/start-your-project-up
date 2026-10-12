@@ -70,39 +70,10 @@ function BinEditor() {
       ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
-        // Detecta se o PNG original tem um conjunto separado de numeros
-        // pequenos na metade direita. Usa o alfa, nao a cor de fundo.
-        const scan = document.createElement("canvas");
-        scan.width = img.naturalWidth; scan.height = img.naturalHeight;
-        const scanCtx = scan.getContext("2d")!;
-        scanCtx.drawImage(img, 0, 0);
-        const original = scanCtx.getImageData(0, 0, scan.width, scan.height);
-        let rightVisible = 0;
-        let leftVisible = 0;
-        for (let y = 0; y < scan.height; y++) {
-          for (let x = 0; x < scan.width; x++) {
-            if (original.data[(y * scan.width + x) * 4 + 3] < 128) continue;
-            if (x >= scan.width / 2) rightVisible++;
-            else leftVisible++;
-          }
-        }
-        // A importacao antiga na paleta 3 permanece disponivel.
-        // Importacao automatica completa so ocorre nas paletas 1 e 2.
-        if (pal === 2) {
-          importShortColorOnly(bin.data, pix, palTex, png);
-        } else {
-          const hasShortNumbers = leftVisible > 0 && rightVisible > 0;
-          // Desenho principal: nao incluir os numeros pequenos da direita
-          // no mapa de indices 4bpp compartilhado.
-          if (hasShortNumbers) {
-            for (let y = 0; y < pix.height; y++) {
-              for (let x = Math.floor(pix.width / 2); x < pix.width; x++) {
-                const p = (y * pix.width + x) * 4;
-                png.data[p] = 0; png.data[p + 1] = 0;
-                png.data[p + 2] = 0; png.data[p + 3] = 0;
-              }
-            }
-          }
+        if (pal === 2) importShortColorOnly(bin.data, pix, palTex, png);
+        else {
+          // Uma unica imagem e um unico conjunto de indices para as 3 paletas.
+          // Copiar as 16 entradas tambem preserva a transparencia do PNG.
           importPngWithPalette(bin.data, pix, palTex, png);
           const imported = getPalette(bin.data, palTex);
           bin.textures.forEach(texture => {
@@ -110,12 +81,6 @@ function BinEditor() {
               setPaletteColor(bin.data, texture, i, [...color] as RGBA)
             );
           });
-          if (hasShortNumbers && bin.textures[2]) {
-            // As cores do short sao extraidas do PNG completo, sem tocar
-            // nos indices do desenho e nas cores das paletas 1 e 2.
-            const shortPng = ctx.getImageData(0, 0, pix.width, pix.height);
-            importShortColorOnly(bin.data, pix, bin.textures[2], shortPng);
-          }
         }
         setErr("");
       } catch (e) { setErr((e as Error).message); return; }
