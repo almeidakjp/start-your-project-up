@@ -224,3 +224,47 @@ export function importShortColorOnly(d: Uint8Array, pix: Tex, paletteTexture: Te
     ]);
   });
 }
+
+
+/**
+ * Importacao automatica: extrai a cor dominante real do short.
+ * Evita escolher artefatos raros de PNGs indexados como cor principal.
+ * Mantem o contraste de contornos escuros pela luminosidade relativa.
+ * A importacao manual continua usando importShortColorOnly.
+ */
+export function importAutoShortColors(d: Uint8Array, pix: Tex, paletteTexture: Tex, img: ImageData) {
+  const buckets = new Map<string, { count: number; r: number; g: number; b: number }>();
+  for (let y = 0; y < img.height; y++) {
+    for (let x = Math.floor(img.width / 2); x < img.width; x++) {
+      const p = (y * img.width + x) * 4;
+      if (img.data[p + 3] < 128) continue;
+      const r = img.data[p], g = img.data[p + 1], b = img.data[p + 2];
+      // Agrupar variacoes leves (antialiasing e ruido de indexacao).
+      const key = [r >> 4, g >> 4, b >> 4].join(",");
+      const entry = buckets.get(key) ?? { count: 0, r: 0, g: 0, b: 0 };
+      entry.count++;
+      entry.r += r; entry.g += g; entry.b += b;
+      buckets.set(key, entry);
+    }
+  }
+  const ranked = [...buckets.values()].sort((a, b) => b.count - a.count);
+  if (!ranked.length) throw new Error("Nao foram encontradas cores nos numeros do short.");
+  const primary = ranked[0];
+  const target = [primary.r, primary.g, primary.b].map(v => Math.round(v / primary.count));
+  const current = getPalette(d, paletteTexture);
+  const used = new Set<number>();
+  const base = pix.offset + 0x80;
+  for (let i = 0; i < pix.width * pix.height; i++) {
+    used.add(((d[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15);
+  }
+  const brightness = (c: number[]) => 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+  const brightest = Math.max(1, ...current.filter((c, i) => used.has(i) && c[3] > 0).map(brightness));
+  current.forEach((color, index) => {
+    if (!used.has(index) || color[3] === 0) return;
+    const ratio = Math.min(1, brightness(color) / brightest);
+    // Preservar pixels escuros de contorno; recolorir preenchimento sem
+    // aproximar RGB entre cores totalmente diferentes.
+    const rgb = target.map(v => Math.round(v * ratio));
+    setPaletteColor(d, paletteTexture, index, [rgb[0], rgb[1], rgb[2], color[3]]);
+  });
+}
