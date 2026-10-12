@@ -61,6 +61,12 @@ function BinEditor() {
 
   const importPng = (f?: File) => {
     if (!f || !bin || !pix || !palTex) return;
+    // As tres paletas compartilham os mesmos pixels. Importar um PNG de short
+    // na Paleta 3 apagaria o desenho da camisa em todas as paletas.
+    if (pal === 2) {
+      setErr("A Paleta 3 usa o mesmo desenho das Paletas 1 e 2. Para manter os números, importe o PNG da camisa na Paleta 1 e altere somente as cores da Paleta 3 nos quadradinhos abaixo.");
+      return;
+    }
     const img = new Image();
     img.onload = () => {
       const c = document.createElement("canvas"); c.width = pix.width; c.height = pix.height;
