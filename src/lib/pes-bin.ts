@@ -185,6 +185,18 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
       }
     }
   }
+  // Para letras, nao deixar a media do agrupamento transformar um pixel
+  // totalmente opaco em alfa 253/254. Preservar a escala de alfa do teste.
+  if (pix.width === 256 && pix.height === 64) {
+    const levels = [68, 110, 158, 212, 252, 254, 255];
+    for (let k = start; k < palette.length; k++) {
+      const c = palette[k];
+      if (c[3] > 0) {
+        c[3] = levels.reduce((best, a) =>
+          Math.abs(a - c[3]) < Math.abs(best - c[3]) ? a : best, levels[0]);
+      }
+    }
+  }
   while (palette.length < 16) palette.push([0, 0, 0, 0]);
   palette.forEach((color, i) => setPaletteColor(d, paletteTexture, i, color));
   // fromImageData usa a paleta da textura de pixels; a paleta selecionada
