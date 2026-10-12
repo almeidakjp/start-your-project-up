@@ -178,56 +178,32 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
 }
 
 /**
- * PES PSP: a paleta 3 (short) usa os mesmos indices do desenho principal.
- * Extrai a cor predominante dos pixels visiveis na metade direita do PNG
- * de PES PC e recolore somente os indices ja visiveis da paleta 3.
- * Nao altera pixels compartilhados, transparencias nem outras paletas.
+ * Recolore os indices VISIVEIS da paleta 3 sem tocar no mapa de pixels.
+ * A cor vem da paleta original do short, ponderada pelos pixels originalmente
+ * visiveis. O alpha do desenho importado permanece intacto.
  */
-export function importShortColorOnly(d: Uint8Array, pix: Tex, paletteTexture: Tex, img: ImageData) {
-  // O PSP usa um unico mapa de indices. O PNG da direita fornece apenas
-  // cores: nunca alteramos os pixels compartilhados nem o alpha da paleta.
-  const frequency = new Map<string, { sum: number[]; count: number }>();
-  for (let y = 0; y < img.height; y++) {
-    for (let x = Math.floor(img.width / 2); x < img.width; x++) {
-      const i = (y * img.width + x) * 4;
-      if (img.data[i + 3] < 128) continue;
-      const rgb = [img.data[i], img.data[i + 1], img.data[i + 2]];
-      const key = rgb.map(v => Math.floor(v / 8)).join(",");
-      const item = frequency.get(key);
-      if (item) {
-        item.count++;
-        rgb.forEach((v, j) => item.sum[j] += v);
-      } else frequency.set(key, { sum: rgb, count: 1 });
-    }
-  }
-  if (!frequency.size) throw new Error("Nenhum numero visivel encontrado na metade direita do PNG do short.");
-  const candidates = [...frequency.values()].map(({sum, count}) =>
-    ({ rgb: sum.map(v => Math.round(v / count)), count })
-  );
-  const pal = getPalette(d, paletteTexture);
-  const used = new Set<number>();
+export function restoreShortColorOnly(
+  d: Uint8Array, pix: Tex, shortTex: Tex, originalPixels: Uint8Array,
+  originalPalette: RGBA[]
+) {
+  const counts = new Array<number>(16).fill(0);
   const base = pix.offset + 0x80;
   for (let i = 0; i < pix.width * pix.height; i++) {
-    used.add(((d[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15);
+    const idx = (originalPixels[i >> 1] >> ((i & 1) * 4)) & 15;
+    if (originalPalette[idx][3] > 8) counts[idx]++;
   }
-  // Para artes multicoloridas (ex.: preto/dourado), mantem os tons distintos.
-  // Para artes de cor unica, todos os indices passam a cor predominante.
-  const dominant = [...candidates].sort((a, b) => b.count - a.count)[0];
-  const distinct = candidates.filter(c =>
-    Math.sqrt(c.rgb.reduce((sum, v, j) => sum + (v - dominant.rgb[j]) ** 2, 0)) > 45
-    && c.count >= Math.max(2, dominant.count * 0.015)
-  );
-  const multiColor = distinct.length > 0;
-  pal.forEach((c, i) => {
-    if (!used.has(i) || c[3] === 0) return;
-    const chosen = multiColor
-      ? candidates.reduce((best, next) => {
-          const dist = (v: typeof next) => v.rgb.reduce((sum, ch, j) => sum + (ch - c[j]) ** 2, 0);
-          return dist(next) < dist(best) ? next : best;
-        }, candidates[0])
-      : dominant;
-    setPaletteColor(d, paletteTexture, i, [
-      chosen.rgb[0], chosen.rgb[1], chosen.rgb[2], c[3]
-    ]);
+  let sourceIndex = -1;
+  for (let i = 0; i < 16; i++)
+    if (sourceIndex < 0 || counts[i] > counts[sourceIndex]) sourceIndex = i;
+  if (sourceIndex < 0 || !counts[sourceIndex])
+    throw new Error("A paleta original do short nao possui pixels visiveis.");
+  const rgb = originalPalette[sourceIndex];
+  const current = getPalette(d, shortTex);
+  const used = new Set<number>();
+  for (let i = 0; i < pix.width * pix.height; i++)
+    used.add(((d[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15);
+  current.forEach((c, i) => {
+    if (used.has(i) && c[3] > 8)
+      setPaletteColor(d, shortTex, i, [rgb[0], rgb[1], rgb[2], c[3]]);
   });
 }
