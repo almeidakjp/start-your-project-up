@@ -134,13 +134,18 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
   // Os numeros 256x128 nao passam por esta normalizacao.
   if (pix.width === 256 && pix.height === 64 && frequency.size > 16) {
     const levels = [0, 68, 110, 158, 212, 252, 254, 255];
+    // Usar os MESMOS valores quantizados tanto para montar a paleta
+    // quanto para atribuir indices; caso contrario os contornos divergem.
+    const converted = new ImageData(img.width, img.height);
+    converted.data.set(img.data);
     const remapped = new Map<string, { rgba: RGBA; count: number }>();
-    for (let i = 0; i < img.data.length; i += 4) {
-      const a = img.data[i + 3]!;
+    for (let i = 0; i < converted.data.length; i += 4) {
+      const a = converted.data[i + 3]!;
       const nearest = levels.reduce((best, n) =>
         Math.abs(n - a) < Math.abs(best - a) ? n : best, levels[0]!);
+      converted.data[i + 3] = nearest;
       const rgba: RGBA = nearest === 0 ? [0, 0, 0, 0] :
-        [img.data[i]!, img.data[i + 1]!, img.data[i + 2]!, nearest];
+        [converted.data[i]!, converted.data[i + 1]!, converted.data[i + 2]!, nearest];
       const key = rgba.join(",");
       const found = remapped.get(key);
       if (found) found.count++;
@@ -148,6 +153,7 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
     }
     frequency.clear();
     for (const [key, value] of remapped) frequency.set(key, value);
+    img = converted;
   }
   const entries = [...frequency.values()].sort((a, b) => b.count - a.count);
   const hasTransparent = entries.some(e => e.rgba[3] === 0);
