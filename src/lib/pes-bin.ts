@@ -154,7 +154,7 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
       }
       for (let k = start; k < palette.length; k++) {
         const sum = sums[k]!;
-        if (sum[4]!) palette[k]! = [0,1,2,3].map(j => Math.round(sum[j]! / sum[4])) as RGBA;
+        if (sum[4]!) palette[k]! = [0,1,2,3].map(j => Math.round(sum[j]! / sum[4]!)) as RGBA;
       }
     }
   }
