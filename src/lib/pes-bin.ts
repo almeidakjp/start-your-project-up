@@ -108,6 +108,27 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
     if (item) item.count++;
     else frequency.set(key, { rgba, count: 1 });
   }
+  // PNG indexado com ate 16 cores: preservar RGBA exato, sem quantizar.
+  if (frequency.size <= 16) {
+    const colors = [...frequency.values()].map(v => v.rgba);
+    const transparent = colors.findIndex(c => c[3] === 0);
+    if (transparent > 0) colors.unshift(...colors.splice(transparent, 1));
+    const lookup = new Map(colors.map((c, i) => [c.join(","), i]));
+    colors.forEach((color, i) => setPaletteColor(d, paletteTexture, i, color));
+    for (let i = colors.length; i < 16; i++) setPaletteColor(d, paletteTexture, i, [0, 0, 0, 0]);
+    const base = pix.offset + 0x80;
+    for (let i = 0; i < pix.width * pix.height; i++) {
+      const p = i * 4;
+      const rgba: RGBA = img.data[p + 3] < 8
+        ? [0, 0, 0, 0]
+        : [img.data[p], img.data[p + 1], img.data[p + 2], img.data[p + 3]];
+      const idx = lookup.get(rgba.join(","));
+      if (idx === undefined) throw new Error("Cor nao encontrada na paleta.");
+      const pos = base + (i >> 1), old = d[pos] ?? 0;
+      d[pos] = i & 1 ? (old & 15) | (idx << 4) : (old & 240) | idx;
+    }
+    return;
+  }
   const entries = [...frequency.values()].sort((a, b) => b.count - a.count);
   const hasTransparent = entries.some(e => e.rgba[3] === 0);
   const palette: RGBA[] = hasTransparent ? [[0, 0, 0, 0]] : [];
@@ -163,26 +184,40 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
  * Nao altera pixels compartilhados, transparencias nem outras paletas.
  */
 export function importShortColorOnly(d: Uint8Array, pix: Tex, paletteTexture: Tex, img: ImageData) {
-  const frequency = new Map<string, { color: RGBA; count: number }>();
+  // Somente a metade direita do PNG de PES PC fornece as cores do short.
+  // O desenho PSP e os indices 4bpp nunca sao modificados aqui.
+  const freq = new Map<string, { color: RGBA; count: number }>();
   for (let y = 0; y < img.height; y++) {
     for (let x = Math.floor(img.width / 2); x < img.width; x++) {
-      const i = (y * img.width + x) * 4;
-      if (img.data[i + 3] < 128) continue;
-      const c: RGBA = [img.data[i], img.data[i + 1], img.data[i + 2], 255];
-      const key = c.slice(0, 3).map(v => Math.round(v / 8)).join(",");
-      const found = frequency.get(key);
-      if (found) found.count++; else frequency.set(key, { color: c, count: 1 });
+      const p = (y * img.width + x) * 4;
+      if (img.data[p + 3] < 128) continue;
+      const color: RGBA = [img.data[p], img.data[p + 1], img.data[p + 2], 255];
+      const key = color.slice(0, 3).join(",");
+      const item = freq.get(key);
+      if (item) item.count++;
+      else freq.set(key, { color, count: 1 });
     }
   }
-  if (!frequency.size) throw new Error("Nenhum numero visivel encontrado na metade direita do PNG do short.");
-  const dominant = [...frequency.values()].sort((a, b) => b.count - a.count)[0].color;
-  const pal = getPalette(d, paletteTexture);
-  const used = new Set<number>();
+  if (!freq.size) throw new Error("Nenhuma cor visivel encontrada na metade direita do PNG do short.");
+  // Preserva cores distintas (ate 16). Cores extras sao aproximadas
+  // porque o formato PSP possui apenas 16 entradas por paleta.
+  const colors = [...freq.values()].sort((a, b) => b.count - a.count).slice(0, 16);
+  const current = getPalette(d, paletteTexture);
   const base = pix.offset + 0x80;
+  const counts = new Array<number>(16).fill(0);
   for (let i = 0; i < pix.width * pix.height; i++) {
-    used.add(((d[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15);
+    const index = ((d[base + (i >> 1)] ?? 0) >> ((i & 1) * 4)) & 15;
+    if (current[index][3] > 0) counts[index]++;
   }
-  pal.forEach((c, i) => {
-    if (used.has(i) && c[3] > 0) setPaletteColor(d, paletteTexture, i, [dominant[0], dominant[1], dominant[2], c[3]]);
+  const active = counts.map((count, index) => ({count, index}))
+    .filter(x => x.count > 0).sort((a, b) => b.count - a.count);
+  if (!active.length) throw new Error("A Paleta 3 nao tem indices visiveis.");
+  // Ordenar por area ocupada preserva as regioes principais e distribui
+  // as demais cores sem tocar nos pixels nem na transparencia.
+  const mainColor = colors[0].color;
+  active.forEach(({index}, order) => {
+    const selected = colors[Math.min(order, colors.length - 1)]?.color ?? mainColor;
+    const a = current[index][3];
+    setPaletteColor(d, paletteTexture, index, [selected[0], selected[1], selected[2], a]);
   });
 }
