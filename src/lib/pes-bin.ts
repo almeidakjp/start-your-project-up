@@ -111,8 +111,15 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
   // PNG indexado com ate 16 cores: preservar RGBA exato, sem quantizar.
   if (frequency.size <= 16) {
     const colors = [...frequency.values()].map(v => v.rgba);
+    // PES PSP: reservar o ultimo indice (15) para transparencia.
+    // Nao deslocar a cor transparente para o indice zero.
     const transparent = colors.findIndex(c => c[3] === 0);
-    if (transparent > 0) colors.unshift(...colors.splice(transparent, 1));
+    if (transparent >= 0) {
+      colors.splice(transparent, 1);
+      // Preencher os indices de cor antes do slot transparente.
+      while (colors.length < 15) colors.push([0, 0, 0, 255]);
+      colors.push([0, 0, 0, 0]);
+    }
     const lookup = new Map(colors.map((c, i) => [c.join(","), i]));
     colors.forEach((color, i) => setPaletteColor(d, paletteTexture, i, color));
     for (let i = colors.length; i < 16; i++) setPaletteColor(d, paletteTexture, i, [0, 0, 0, 0]);
