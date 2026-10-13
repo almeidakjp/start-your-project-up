@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importLettersMask,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -70,7 +70,10 @@ function BinEditor() {
       ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
-        if (pal === 2) {
+        if (pix.height === 64) {
+          // Letras: o jogo pinta com a cor do uniforme; gravar so forma e brilho.
+          importLettersMask(bin.data, bin, pix, png);
+        } else if (pal === 2) {
           // Experimento: em atlas completo, isolar os numeros pequenos antes
           // de reutilizar a rotina manual comprovada.
           const source = document.createElement("canvas");
