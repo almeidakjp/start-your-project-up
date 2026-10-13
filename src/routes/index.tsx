@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importLettersMask,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importLettersMask, importLettersColor,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -75,12 +75,8 @@ function BinEditor() {
           // Modo mascara: o jogo pinta com a cor do uniforme; gravar so forma e brilho.
           importLettersMask(bin.data, bin, pix, png);
         } else if (pix.height === 64) {
-          // Manter as cores reais do PNG em todas as paletas.
-          importPngWithPalette(bin.data, pix, palTex, png);
-          const imported = getPalette(bin.data, palTex);
-          bin.textures.forEach(texture => {
-            imported.forEach((color, i) => setPaletteColor(bin.data, texture, i, [...color] as RGBA));
-          });
+          // Manter as cores do PNG, usando so os indices que o jogo mostra (8-15).
+          importLettersColor(bin.data, bin, pix, png);
         } else if (pal === 2) {
           // Experimento: em atlas completo, isolar os numeros pequenos antes
           // de reutilizar a rotina manual comprovada.
