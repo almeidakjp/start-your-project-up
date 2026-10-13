@@ -70,9 +70,16 @@ function BinEditor() {
       ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
-        if (pix.height === 64) {
-          // Letras: o jogo pinta com a cor do uniforme; gravar so forma e brilho.
+        if (pix.height === 64 && !keepColors) {
+          // Modo mascara: o jogo pinta com a cor do uniforme; gravar so forma e brilho.
           importLettersMask(bin.data, bin, pix, png);
+        } else if (pix.height === 64) {
+          // Manter as cores reais do PNG em todas as paletas.
+          importPngWithPalette(bin.data, pix, palTex, png);
+          const imported = getPalette(bin.data, palTex);
+          bin.textures.forEach(texture => {
+            imported.forEach((color, i) => setPaletteColor(bin.data, texture, i, [...color] as RGBA));
+          });
         } else if (pal === 2) {
           // Experimento: em atlas completo, isolar os numeros pequenos antes
           // de reutilizar a rotina manual comprovada.
