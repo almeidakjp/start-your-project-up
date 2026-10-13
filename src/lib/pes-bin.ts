@@ -245,3 +245,38 @@ export function importShortColorOnly(d: Uint8Array, pix: Tex, paletteTexture: Te
     ]);
   });
 }
+
+/**
+ * Letras PES 2014 PSP: o jogo ignora o RGB da paleta e pinta as letras com a
+ * cor escolhida no uniforme. A textura so define forma e sombreamento pelo
+ * indice: 0-7 transparentes, 8-15 cada vez mais opacos e claros.
+ * Converte o PNG em brilho e grava indices nessa escala, restaurando a
+ * paleta cinza original.
+ */
+export const LETTER_PALETTE: RGBA[] = [
+  [16, 16, 16, 0], [56, 56, 56, 0], [88, 88, 88, 0], [147, 147, 147, 0],
+  [189, 189, 189, 0], [255, 255, 255, 0], [3, 3, 3, 0], [36, 36, 36, 0],
+  [1, 1, 1, 68], [21, 21, 21, 110], [45, 45, 45, 158], [80, 80, 80, 212],
+  [161, 161, 161, 252], [208, 208, 208, 254], [241, 241, 241, 255], [254, 254, 254, 255],
+];
+
+export function letterIndex(r: number, g: number, b: number, a: number): number {
+  if (a < 40) return 0;
+  if (a < 90) return 8;
+  if (a < 135) return 9;
+  if (a < 185) return 10;
+  const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+  // Opacos: brilho 0-255 vira indices 11-15 (cinza 80 ate branco).
+  return 11 + Math.min(4, Math.floor((lum / 256) * 5));
+}
+
+export function importLettersMask(d: Uint8Array, bin: { textures: Tex[] }, pix: Tex, img: ImageData) {
+  bin.textures.forEach(t => LETTER_PALETTE.forEach((c, i) => setPaletteColor(d, t, i, c)));
+  const base = pix.offset + 0x80;
+  for (let i = 0; i < pix.width * pix.height; i++) {
+    const p = i * 4;
+    const idx = letterIndex(img.data[p]!, img.data[p + 1]!, img.data[p + 2]!, img.data[p + 3]!);
+    const pos = base + (i >> 1), old = d[pos] ?? 0;
+    d[pos] = i & 1 ? (old & 15) | (idx << 4) : (old & 240) | idx;
+  }
+}
