@@ -132,10 +132,31 @@ export function importPngWithPalette(d: Uint8Array, pix: Tex, paletteTexture: Te
   const entries = [...frequency.values()].sort((a, b) => b.count - a.count);
   const hasTransparent = entries.some(e => e.rgba[3] === 0);
   const palette: RGBA[] = hasTransparent ? [[0, 0, 0, 0]] : [];
-  for (const entry of entries) {
-    if (entry.rgba[3] === 0) continue;
-    if (palette.length >= 16) break;
-    palette.push([...entry.rgba] as RGBA);
+  // Semente por median cut: preserva contornos e tons escuros raros.
+  let boxes: { rgba: RGBA; count: number }[][] = [entries.filter(e => e.rgba[3] !== 0)];
+  const slots = 16 - palette.length;
+  while (boxes.length < slots) {
+    let bi = -1, bestRange = 0, bestCh = 0;
+    boxes.forEach((box, i) => {
+      if (box.length < 2) return;
+      for (let ch = 0; ch < 4; ch++) {
+        let lo = 255, hi = 0;
+        for (const e of box) { lo = Math.min(lo, e.rgba[ch]!); hi = Math.max(hi, e.rgba[ch]!); }
+        if (hi - lo > bestRange) { bestRange = hi - lo; bi = i; bestCh = ch; }
+      }
+    });
+    if (bi < 0) break;
+    const box = boxes[bi]!.sort((x, y) => x.rgba[bestCh]! - y.rgba[bestCh]!);
+    const total = box.reduce((t, e) => t + e.count, 0);
+    let acc = 0, cut = 1;
+    for (let i = 0; i < box.length - 1; i++) { acc += box[i]!.count; if (acc >= total / 2) { cut = i + 1; break; } }
+    boxes.splice(bi, 1, box.slice(0, cut), box.slice(cut));
+  }
+  boxes = boxes.filter(b => b.length);
+  for (const box of boxes) {
+    const sum = [0, 0, 0, 0]; let n = 0;
+    for (const e of box) { for (let j = 0; j < 4; j++) sum[j]! += e.rgba[j]! * e.count; n += e.count; }
+    palette.push(sum.map(v => Math.round(v / n)) as RGBA);
   }
   const start = hasTransparent ? 1 : 0;
   if (entries.length > 16) {
