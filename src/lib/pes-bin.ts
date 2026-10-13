@@ -282,10 +282,11 @@ export function importLettersMask(d: Uint8Array, bin: { textures: Tex[] }, pix: 
 }
 
 /**
- * Letras coloridas: no jogo os indices 0-7 saem transparentes, mesmo que a
- * paleta diga o contrario (por isso apareciam furos). Grava ate 8 cores
- * opacas somente nos indices 8-15, do mais escuro ao mais claro.
+ * Letras coloridas: o jogo ignora o alpha da paleta e usa uma opacidade fixa
+ * por indice (0-7 invisiveis, 8-11 semitransparentes, 12-15 opacos), por isso
+ * o preto no indice 8 sumia. Grava ate 4 cores somente nos indices 12-15.
  */
+export const LETTER_COLOR_SLOTS = 4;
 export function importLettersColor(d: Uint8Array, bin: { textures: Tex[] }, pix: Tex, img: ImageData) {
   if (img.width !== pix.width || img.height !== pix.height)
     throw new Error("PNG precisa ter as dimensões originais da textura");
@@ -302,11 +303,11 @@ export function importLettersColor(d: Uint8Array, bin: { textures: Tex[] }, pix:
   }
   const uniq = [...freq.values()].sort((a, b) => b.n - a.n);
   let centers: number[][] = [];
-  if (uniq.length <= 8) centers = uniq.map(u => [...u.c]);
+  if (uniq.length <= LETTER_COLOR_SLOTS) centers = uniq.map(u => [...u.c]);
   else {
     // Semente: cores frequentes e afastadas entre si; depois k-means.
     centers.push([...uniq[0]!.c]);
-    while (centers.length < 8) {
+    while (centers.length < LETTER_COLOR_SLOTS) {
       let best = uniq[0]!, bd = -1;
       for (const u of uniq) {
         const md = Math.min(...centers.map(c => dist(c, u.c)));
@@ -329,9 +330,9 @@ export function importLettersColor(d: Uint8Array, bin: { textures: Tex[] }, pix:
   }
   const lum = (c: number[]) => 0.299 * c[0]! + 0.587 * c[1]! + 0.114 * c[2]!;
   centers.sort((a, b) => lum(a) - lum(b));
-  while (centers.length < 8) centers.push([...(centers[centers.length - 1] ?? [255, 255, 255])]);
+  while (centers.length < LETTER_COLOR_SLOTS) centers.push([...(centers[centers.length - 1] ?? [255, 255, 255])]);
   const palette: RGBA[] = [
-    ...LETTER_PALETTE.slice(0, 8),
+    ...LETTER_PALETTE.slice(0, 12),
     ...centers.map(c => [c[0]!, c[1]!, c[2]!, 255] as RGBA),
   ];
   bin.textures.forEach(t => palette.forEach((c, i) => setPaletteColor(d, t, i, c)));
@@ -340,7 +341,7 @@ export function importLettersColor(d: Uint8Array, bin: { textures: Tex[] }, pix:
     let idx = 0;
     if (img.data[i * 4 + 3]! >= 128) {
       const c = rgbAt(i); let bd = Infinity;
-      centers.forEach((p, k) => { const dd = dist(p, c); if (dd < bd) { bd = dd; idx = 8 + k; } });
+      centers.forEach((p, k) => { const dd = dist(p, c); if (dd < bd) { bd = dd; idx = 12 + k; } });
     }
     const pos = base + (i >> 1), old = d[pos] ?? 0;
     d[pos] = i & 1 ? (old & 15) | (idx << 4) : (old & 240) | idx;

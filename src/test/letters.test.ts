@@ -11,7 +11,7 @@ describe("letterIndex (letras PES PSP)", () => {
 import { importLettersColor } from "@/lib/pes-bin";
 
 describe("importLettersColor", () => {
-  it("nunca usa indices 1-7 (o jogo os mostra transparentes)", () => {
+  it("so usa indices opacos 12-15 (o jogo fixa a opacidade por indice)", () => {
     const w = 16, h = 4;
     const d = new Uint8Array(0x80 + (w * h) / 2 + 16);
     const pix = { offset: 0, width: w, height: h, hasPixels: true };
@@ -24,7 +24,7 @@ describe("importLettersColor", () => {
     for (let i = 0; i < w * h; i++) {
       const idx = (d[0x80 + (i >> 1)]! >> ((i & 1) * 4)) & 15;
       if (i % 13 === 0) expect(idx).toBe(0);
-      else expect(idx).toBeGreaterThanOrEqual(8);
+      else expect(idx).toBeGreaterThanOrEqual(12);
     }
   });
 });
