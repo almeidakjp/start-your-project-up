@@ -29,6 +29,7 @@ function BinEditor() {
   const [ver, setVer] = useState(0);
   const [err, setErr] = useState("");
   const [bg, setBg] = useState("#1f2a24");
+  const [keepColors, setKeepColors] = useState(true);
   const canvas = useRef<HTMLCanvasElement>(null);
 
   const pix = bin?.textures.find((t) => t.hasPixels);
@@ -217,6 +218,12 @@ function BinEditor() {
               Salvar .BIN
             </button>
           </section>
+          {pix.height === 64 && (
+            <label className="mt-3 flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={keepColors} onChange={(e) => setKeepColors(e.target.checked)} />
+              Manter as cores do PNG (desmarque para usar a cor do uniforme)
+            </label>
+          )}
           <p className="mt-3 text-xs text-muted-foreground">Dica: exporte o PNG, edite num app de desenho mantendo o tamanho, e importe de volta.</p>
         </>
       )}
