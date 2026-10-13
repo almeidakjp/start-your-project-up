@@ -291,8 +291,9 @@ export function importLettersColor(d: Uint8Array, bin: { textures: Tex[] }, pix:
   if (img.width !== pix.width || img.height !== pix.height)
     throw new Error("PNG precisa ter as dimensões originais da textura");
   const n = pix.width * pix.height;
+  // Preserva pixels escuros opacos e bordas semitransparentes.
   const opaque: number[] = [];
-  for (let i = 0; i < n; i++) if (img.data[i * 4 + 3]! >= 128) opaque.push(i);
+  for (let i = 0; i < n; i++) if (img.data[i * 4 + 3]! >= 40) opaque.push(i);
   const rgbAt = (i: number): [number, number, number] => [img.data[i * 4]!, img.data[i * 4 + 1]!, img.data[i * 4 + 2]!];
   const dist = (a: number[], b: number[]) => (a[0]! - b[0]!) ** 2 + (a[1]! - b[1]!) ** 2 + (a[2]! - b[2]!) ** 2;
   // Cores unicas com contagem.
@@ -302,11 +303,16 @@ export function importLettersColor(d: Uint8Array, bin: { textures: Tex[] }, pix:
     const e = freq.get(k); if (e) e.n++; else freq.set(k, { c, n: 1 });
   }
   const uniq = [...freq.values()].sort((a, b) => b.n - a.n);
+  // Reserva uma cor para detalhes pretos quando presentes.
+  const dark = uniq.filter(u => (0.299*u.c[0] + 0.587*u.c[1] + 0.114*u.c[2]) < 65);
+  const darkCount = dark.reduce((n,u) => n + u.n, 0);
+  const keepDark = darkCount >= Math.max(8, opaque.length * 0.015);
+  const darkCenter = keepDark ? [0,1,2].map(k => Math.round(dark.reduce((n,u) => n + u.c[k]! * u.n, 0) / darkCount)) : null;
   let centers: number[][] = [];
   if (uniq.length <= LETTER_COLOR_SLOTS) centers = uniq.map(u => [...u.c]);
   else {
     // Semente: cores frequentes e afastadas entre si; depois k-means.
-    centers.push([...uniq[0]!.c]);
+    centers.push(darkCenter ?? [...uniq[0]!.c]);
     while (centers.length < LETTER_COLOR_SLOTS) {
       let best = uniq[0]!, bd = -1;
       for (const u of uniq) {
@@ -325,7 +331,7 @@ export function importLettersColor(d: Uint8Array, bin: { textures: Tex[] }, pix:
         for (let j = 0; j < 3; j++) sums[bi]![j]! += u.c[j]! * u.n;
         sums[bi]![3]! += u.n;
       }
-      centers = centers.map((c, k) => sums[k]![3] ? sums[k]!.slice(0, 3).map(v => Math.round(v / sums[k]![3]!)) : c);
+      centers = centers.map((c, k) => (keepDark && k === 0) ? darkCenter! : (sums[k]![3] ? sums[k]!.slice(0, 3).map(v => Math.round(v / sums[k]![3]!)) : c));
     }
   }
   const lum = (c: number[]) => 0.299 * c[0]! + 0.587 * c[1]! + 0.114 * c[2]!;
@@ -339,7 +345,7 @@ export function importLettersColor(d: Uint8Array, bin: { textures: Tex[] }, pix:
   const base = pix.offset + 0x80;
   for (let i = 0; i < n; i++) {
     let idx = 0;
-    if (img.data[i * 4 + 3]! >= 128) {
+    if (img.data[i * 4 + 3]! >= 40) {
       const c = rgbAt(i); let bd = Infinity;
       centers.forEach((p, k) => { const dd = dist(p, c); if (dd < bd) { bd = dd; idx = 12 + k; } });
     }
