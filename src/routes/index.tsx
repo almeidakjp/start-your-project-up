@@ -65,8 +65,8 @@ function BinEditor() {
     img.onload = () => {
       const c = document.createElement("canvas"); c.width = pix.width; c.height = pix.height;
       const ctx = c.getContext("2d")!;
-      // PNG 512x256 -> textura 256x128 sem interpolacao.
-      ctx.imageSmoothingEnabled = false;
+      // Reduzir com suavizacao: pular pixels gerava chuviscos nas letras.
+      ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = "high";
       ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
@@ -82,7 +82,7 @@ function BinEditor() {
           const w = source.width, h = source.height;
           let leftCount = 0, rightCount = 0;
           for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) {
-            if (sourceData.data[(y * w + x) * 4 + 3] < 128) continue;
+            if (sourceData.data[(y * w + x) * 4 + 3]! < 128) continue;
             if (x < w * 0.55) leftCount++;
             if (x >= w * 0.65) rightCount++;
           }
@@ -96,7 +96,7 @@ function BinEditor() {
             for (let x = Math.round(w * 0.57); x <= Math.round(w * 0.68); x++) {
               let ink = 0;
               for (let y = 0; y < h; y++) {
-                if (sourceData.data[(y * w + x) * 4 + 3] >= 128) ink++;
+                if (sourceData.data[(y * w + x) * 4 + 3]! >= 128) ink++;
               }
               if (ink < lowest) { lowest = ink; split = x; }
             }
