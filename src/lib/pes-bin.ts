@@ -280,3 +280,69 @@ export function importLettersMask(d: Uint8Array, bin: { textures: Tex[] }, pix: 
     d[pos] = i & 1 ? (old & 15) | (idx << 4) : (old & 240) | idx;
   }
 }
+
+/**
+ * Letras coloridas: no jogo os indices 0-7 saem transparentes, mesmo que a
+ * paleta diga o contrario (por isso apareciam furos). Grava ate 8 cores
+ * opacas somente nos indices 8-15, do mais escuro ao mais claro.
+ */
+export function importLettersColor(d: Uint8Array, bin: { textures: Tex[] }, pix: Tex, img: ImageData) {
+  if (img.width !== pix.width || img.height !== pix.height)
+    throw new Error("PNG precisa ter as dimensões originais da textura");
+  const n = pix.width * pix.height;
+  const opaque: number[] = [];
+  for (let i = 0; i < n; i++) if (img.data[i * 4 + 3]! >= 128) opaque.push(i);
+  const rgbAt = (i: number): [number, number, number] => [img.data[i * 4]!, img.data[i * 4 + 1]!, img.data[i * 4 + 2]!];
+  const dist = (a: number[], b: number[]) => (a[0]! - b[0]!) ** 2 + (a[1]! - b[1]!) ** 2 + (a[2]! - b[2]!) ** 2;
+  // Cores unicas com contagem.
+  const freq = new Map<number, { c: [number, number, number]; n: number }>();
+  for (const i of opaque) {
+    const c = rgbAt(i), k = (c[0] << 16) | (c[1] << 8) | c[2];
+    const e = freq.get(k); if (e) e.n++; else freq.set(k, { c, n: 1 });
+  }
+  const uniq = [...freq.values()].sort((a, b) => b.n - a.n);
+  let centers: number[][] = [];
+  if (uniq.length <= 8) centers = uniq.map(u => [...u.c]);
+  else {
+    // Semente: cores frequentes e afastadas entre si; depois k-means.
+    centers.push([...uniq[0]!.c]);
+    while (centers.length < 8) {
+      let best = uniq[0]!, bd = -1;
+      for (const u of uniq) {
+        const md = Math.min(...centers.map(c => dist(c, u.c)));
+        const score = md * Math.sqrt(u.n);
+        if (score > bd) { bd = score; best = u; }
+      }
+      if (bd <= 0) break;
+      centers.push([...best.c]);
+    }
+    for (let pass = 0; pass < 8; pass++) {
+      const sums = centers.map(() => [0, 0, 0, 0]);
+      for (const u of uniq) {
+        let bi = 0, bd = Infinity;
+        centers.forEach((c, k) => { const dd = dist(c, u.c); if (dd < bd) { bd = dd; bi = k; } });
+        for (let j = 0; j < 3; j++) sums[bi]![j]! += u.c[j]! * u.n;
+        sums[bi]![3]! += u.n;
+      }
+      centers = centers.map((c, k) => sums[k]![3] ? sums[k]!.slice(0, 3).map(v => Math.round(v / sums[k]![3]!)) : c);
+    }
+  }
+  const lum = (c: number[]) => 0.299 * c[0]! + 0.587 * c[1]! + 0.114 * c[2]!;
+  centers.sort((a, b) => lum(a) - lum(b));
+  while (centers.length < 8) centers.push([...(centers[centers.length - 1] ?? [255, 255, 255])]);
+  const palette: RGBA[] = [
+    ...LETTER_PALETTE.slice(0, 8),
+    ...centers.map(c => [c[0]!, c[1]!, c[2]!, 255] as RGBA),
+  ];
+  bin.textures.forEach(t => palette.forEach((c, i) => setPaletteColor(d, t, i, c)));
+  const base = pix.offset + 0x80;
+  for (let i = 0; i < n; i++) {
+    let idx = 0;
+    if (img.data[i * 4 + 3]! >= 128) {
+      const c = rgbAt(i); let bd = Infinity;
+      centers.forEach((p, k) => { const dd = dist(p, c); if (dd < bd) { bd = dd; idx = 8 + k; } });
+    }
+    const pos = base + (i >> 1), old = d[pos] ?? 0;
+    d[pos] = i & 1 ? (old & 15) | (idx << 4) : (old & 240) | idx;
+  }
+}
