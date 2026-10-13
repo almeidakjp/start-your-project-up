@@ -218,7 +218,7 @@ function BinEditor() {
               Salvar .BIN
             </button>
           </section>
-          {pix.height === 64 && (
+          {pix?.height === 64 && (
             <label className="mt-3 flex items-center gap-2 text-sm">
               <input type="checkbox" checked={keepColors} onChange={(e) => setKeepColors(e.target.checked)} />
               Manter as cores do PNG (desmarque para usar a cor do uniforme)
