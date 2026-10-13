@@ -29,6 +29,7 @@ function BinEditor() {
   const [ver, setVer] = useState(0);
   const [err, setErr] = useState("");
   const [bg, setBg] = useState("#1f2a24");
+  const [keepColors, setKeepColors] = useState(true);
   const canvas = useRef<HTMLCanvasElement>(null);
 
   const pix = bin?.textures.find((t) => t.hasPixels);
@@ -70,9 +71,16 @@ function BinEditor() {
       ctx.drawImage(img, 0, 0, pix.width, pix.height);
       try {
         const png = ctx.getImageData(0, 0, pix.width, pix.height);
-        if (pix.height === 64) {
-          // Letras: o jogo pinta com a cor do uniforme; gravar so forma e brilho.
+        if (pix.height === 64 && !keepColors) {
+          // Modo mascara: o jogo pinta com a cor do uniforme; gravar so forma e brilho.
           importLettersMask(bin.data, bin, pix, png);
+        } else if (pix.height === 64) {
+          // Manter as cores reais do PNG em todas as paletas.
+          importPngWithPalette(bin.data, pix, palTex, png);
+          const imported = getPalette(bin.data, palTex);
+          bin.textures.forEach(texture => {
+            imported.forEach((color, i) => setPaletteColor(bin.data, texture, i, [...color] as RGBA));
+          });
         } else if (pal === 2) {
           // Experimento: em atlas completo, isolar os numeros pequenos antes
           // de reutilizar a rotina manual comprovada.
@@ -210,6 +218,12 @@ function BinEditor() {
               Salvar .BIN
             </button>
           </section>
+          {pix?.height === 64 && (
+            <label className="mt-3 flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={keepColors} onChange={(e) => setKeepColors(e.target.checked)} />
+              Manter as cores do PNG (desmarque para usar a cor do uniforme)
+            </label>
+          )}
           <p className="mt-3 text-xs text-muted-foreground">Dica: exporte o PNG, edite num app de desenho mantendo o tamanho, e importe de volta.</p>
         </>
       )}
