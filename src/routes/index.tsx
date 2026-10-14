@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importLettersMask, importLettersColor, importLettersUsingOriginalPalette, importLettersGoldBlack, importLettersGoldBlack16,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importLettersMask, importLettersColor, importLettersUsingOriginalPalette, importLettersGoldBlack, importLettersGoldBlack16, importLettersOptpixStyle,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -143,6 +143,28 @@ function BinEditor() {
     };
     img.onerror = () => setErr("Não foi possível abrir o PNG.");
     img.src = URL.createObjectURL(f);
+  };
+
+  const importLettersOptpix = (f?: File) => {
+    if (!f || !bin || !pix || !palTex || pix.width !== 256 || pix.height !== 64) return;
+    const img = new Image(), url = URL.createObjectURL(f);
+    img.onload = () => {
+      try {
+        if (img.naturalWidth !== 256 || img.naturalHeight !== 64)
+          throw new Error("O PNG deve ter exatamente 256×64 pixels.");
+        const c = document.createElement("canvas");
+        c.width = 256; c.height = 64;
+        const ctx = c.getContext("2d")!;
+        ctx.drawImage(img, 0, 0);
+        setIndexCounts(importLettersOptpixStyle(bin.data, pix, palTex,
+          ctx.getImageData(0, 0, 256, 64)));
+        setErr("");
+        setVer(v => v + 1);
+      } catch (e) { setErr((e as Error).message); }
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => { setErr("Não foi possível abrir o PNG."); URL.revokeObjectURL(url); };
+    img.src = url;
   };
 
   // Teste v3: exatamente o mesmo quantizador usado na importacao de numeros.
@@ -375,6 +397,18 @@ function BinEditor() {
               <input type="file" accept="image/png" className="hidden" onChange={(e) => { importGoldBlackFont(e.target.files?.[0]); e.target.value = ""; }} />
               <span className="mt-1 block text-xs font-normal text-muted-foreground">Usa o desenho do PNG e gera índices 12–15 para preto e dourado</span>
             </label>
+          )}
+          {pix.width === 256 && pix.height === 64 && (
+            <div className="mt-3 rounded-md border border-primary/60 bg-secondary p-3">
+              <label className="block cursor-pointer text-center text-sm font-semibold">
+                Importar letras estilo OPTPiX (teste v4)
+                <input type="file" accept="image/png" className="hidden" onChange={(e) => { importLettersOptpix(e.target.files?.[0]); e.target.value = ""; }} />
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">16 cores, sem dithering, transparência protegida. Método experimental.</span>
+              </label>
+              {indexCounts && <div className="mt-3 grid grid-cols-4 gap-1 text-xs text-muted-foreground">
+                {indexCounts.map((n,i) => <span key={i}>Índice {i}: {n}</span>)}
+              </div>}
+            </div>
           )}
           {pix.width === 256 && pix.height === 64 && (
             <label className="mt-3 block cursor-pointer rounded-md border border-primary/60 bg-secondary p-3 text-center text-sm font-semibold">
