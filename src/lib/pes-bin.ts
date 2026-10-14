@@ -385,3 +385,45 @@ export function importLettersUsingOriginalPalette(d: Uint8Array, pix: Tex, palTe
     d[pos] = i & 1 ? (old & 15) | (idx << 4) : (old & 240) | idx;
   }
 }
+
+/** Experimental gold/black font import. Retains the BIN container and texture layout.
+ * Uses opaque PSP letter slots 12-15, reserving 12 for dark interiors and
+ * 13-15 for progressively brighter gold. Does not recolor transparent slots.
+ */
+export function importLettersGoldBlack(d: Uint8Array, bin: { textures: Tex[] }, pix: Tex, img: ImageData) {
+  if (img.width !== pix.width || img.height !== pix.height)
+    throw new Error("O PNG precisa ter o tamanho exato da textura.");
+  const n = pix.width * pix.height;
+  const pixels = img.data;
+  const gold = [0, 0, 0, 0]; let goldCount = 0;
+  for (let i = 0; i < n; i++) {
+    const p = i * 4, a = pixels[p + 3]!;
+    const r = pixels[p]!, g = pixels[p + 1]!, b = pixels[p + 2]!;
+    if (a >= 96 && r > b * 1.15 && r > 65 && g > b * 1.1) {
+      gold[0] += r; gold[1] += g; gold[2] += b; goldCount++;
+    }
+  }
+  if (!goldCount) throw new Error("Não encontrei tons dourados no PNG.");
+  const mid: RGBA = [Math.round(gold[0]/goldCount), Math.round(gold[1]/goldCount), Math.round(gold[2]/goldCount), 255];
+  const darker = (v: number, factor: number) => Math.max(0, Math.min(255, Math.round(v * factor)));
+  const colors: RGBA[] = [
+    [12, 9, 5, 255],
+    [darker(mid[0], .65), darker(mid[1], .65), darker(mid[2], .65), 255],
+    mid,
+    [Math.min(255, Math.round(mid[0]*1.16)), Math.min(255, Math.round(mid[1]*1.16)), Math.min(255, Math.round(mid[2]*1.16)), 255],
+  ];
+  for (const t of bin.textures) colors.forEach((c, k) => setPaletteColor(d, t, 12+k, c));
+  const base = pix.offset + 0x80;
+  for (let i = 0; i < n; i++) {
+    const p = i * 4, a = pixels[p+3]!;
+    const r = pixels[p]!, g = pixels[p+1]!, b = pixels[p+2]!;
+    let idx = 0;
+    if (a >= 40) {
+      const brightness = (r+g+b)/3;
+      const isGold = r > b*1.15 && r > 65 && g > b*1.1;
+      idx = !isGold ? 12 : brightness < 105 ? 13 : brightness < 175 ? 14 : 15;
+    }
+    const pos = base + (i >> 1), old = d[pos] ?? 0;
+    d[pos] = i & 1 ? (old & 15) | (idx << 4) : (old & 240) | idx;
+  }
+}
