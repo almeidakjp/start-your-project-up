@@ -427,3 +427,55 @@ export function importLettersGoldBlack(d: Uint8Array, bin: { textures: Tex[] }, 
     d[pos] = i & 1 ? (old & 15) | (idx << 4) : (old & 240) | idx;
   }
 }
+
+/** Teste v2: 16 entradas definidas, contorno suavizado e contagem de índices.
+ * Não garante equivalência entre a prévia do navegador e o renderizador PSP.
+ */
+export function importLettersGoldBlack16(d: Uint8Array, bin: { textures: Tex[] }, pix: Tex, img: ImageData): number[] {
+  if (img.width !== pix.width || img.height !== pix.height)
+    throw new Error("O PNG precisa ter exatamente 256×64 pixels.");
+  const w = pix.width, h = pix.height, src = img.data;
+  const pal: RGBA[] = [
+    [0,0,0,0], [0,0,0,0], [0,0,0,0], [0,0,0,0],
+    [0,0,0,0], [0,0,0,0], [0,0,0,0], [0,0,0,0],
+    [18,13,8,68], [27,19,10,110], [55,37,16,158], [97,65,28,212],
+    [10,8,5,252], [95,64,31,254], [165,113,55,255], [223,172,105,255],
+  ];
+  // A cor dourada é extraída do PNG; os tons intermediários seguem sua tonalidade.
+  let rs=0,gs=0,bs=0,count=0;
+  for(let p=0;p<src.length;p+=4) {
+    const r=src[p]!,g=src[p+1]!,b=src[p+2]!,a=src[p+3]!;
+    if(a>=128 && r>65 && r>b*1.15 && g>b*1.1) {rs+=r;gs+=g;bs+=b;count++;}
+  }
+  if (!count) throw new Error("Nenhum dourado encontrado no PNG.");
+  const gold: [number,number,number]=[rs/count,gs/count,bs/count];
+  for (let i=9;i<=11;i++) {
+    const factor=[0,.38,.62,.83][i-8]!;
+    pal[i]=[Math.round(gold[0]*factor),Math.round(gold[1]*factor),Math.round(gold[2]*factor),pal[i]![3]];
+  }
+  pal[13]=[Math.round(gold[0]*.52),Math.round(gold[1]*.52),Math.round(gold[2]*.52),254];
+  pal[14]=[Math.round(gold[0]*.83),Math.round(gold[1]*.83),Math.round(gold[2]*.83),255];
+  pal[15]=[Math.min(255,Math.round(gold[0]*1.12)),Math.min(255,Math.round(gold[1]*1.12)),Math.min(255,Math.round(gold[2]*1.12)),255];
+  bin.textures.forEach(t=>pal.forEach((c,i)=>setPaletteColor(d,t,i,c)));
+  const counts=Array(16).fill(0) as number[];
+  const base=pix.offset+0x80;
+  const isInk=(x:number,y:number)=>x>=0&&x<w&&y>=0&&y<h&&src[(y*w+x)*4+3]!>=40;
+  for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+    const i=y*w+x,p=i*4,a=src[p+3]!,r=src[p]!,g=src[p+1]!,b=src[p+2]!;
+    let idx=0;
+    if(a>=40){
+      const isGold=r>65&&r>b*1.15&&g>b*1.1;
+      const lum=(r+g+b)/3;
+      idx=!isGold?12:lum<100?13:lum<175?14:15;
+      // Borda de um pixel: índices com alpha intermediário.
+      let neighbors=0;
+      for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]])if(isInk(x+dx,y+dy))neighbors++;
+      if(neighbors<=2)idx=isGold?11:9;
+      else if(neighbors===3)idx=isGold?14:10;
+    }
+    counts[idx]!++;
+    const pos=base+(i>>1),old=d[pos]??0;
+    d[pos]=i&1?(old&15)|(idx<<4):(old&240)|idx;
+  }
+  return counts;
+}
