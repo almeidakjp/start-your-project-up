@@ -395,7 +395,7 @@ export function importLettersGoldBlack(d: Uint8Array, bin: { textures: Tex[] }, 
     throw new Error("O PNG precisa ter o tamanho exato da textura.");
   const n = pix.width * pix.height;
   const pixels = img.data;
-  const gold = [0, 0, 0, 0]; let goldCount = 0;
+  const gold: [number, number, number, number] = [0, 0, 0, 0]; let goldCount = 0;
   for (let i = 0; i < n; i++) {
     const p = i * 4, a = pixels[p + 3]!;
     const r = pixels[p]!, g = pixels[p + 1]!, b = pixels[p + 2]!;
@@ -469,7 +469,7 @@ export function importLettersGoldBlack16(d: Uint8Array, bin: { textures: Tex[] }
       idx=!isGold?12:lum<100?13:lum<175?14:15;
       // Borda de um pixel: índices com alpha intermediário.
       let neighbors=0;
-      for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]])if(isInk(x+dx,y+dy))neighbors++;
+      for(const [dx,dy] of [[-1,0],[1,0],[0,-1],[0,1]] as [number,number][])if(isInk(x+dx,y+dy))neighbors++;
       if(neighbors<=2)idx=isGold?11:9;
       else if(neighbors===3)idx=isGold?14:10;
     }
