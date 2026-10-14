@@ -506,3 +506,65 @@ export function importLettersOptpixStyle(d: Uint8Array, pix: Tex, paletteTexture
   }
   return counts;
 }
+
+/** Importacao de letras que preserva a ordem e o alpha da paleta original.
+ * PNG exportado sem alteracoes: mantem todos os bytes de indices exatamente iguais.
+ * PNG editado: associa pixels visiveis aos indices 8..15 por alpha/luminosidade.
+ */
+export function importLettersPreservingIndices(d: Uint8Array, pix: Tex, palTex: Tex, img: ImageData): {unchanged:number;changed:number} {
+  if (pix.width !== 256 || pix.height !== 64 || img.width !== 256 || img.height !== 64)
+    throw new Error("O PNG e o BIN devem ter 256×64 pixels.");
+  const originalPal = getPalette(d, palTex);
+  const base = pix.offset + 0x80;
+  const n = pix.width * pix.height;
+  const originalIdx = new Uint8Array(n);
+  const originalRGBA = new Uint8Array(n*4);
+  for (let i=0;i<n;i++) {
+    const b=d[base+(i>>1)]??0;
+    const idx=(i&1)?b>>4:b&15;
+    originalIdx[i]=idx;
+    originalRGBA.set(originalPal[idx]!,i*4);
+  }
+  // Atualiza apenas RGB dos indices visiveis; nunca reordena indices ou alpha.
+  // Para PNG original (roundtrip) a paleta fica intocada.
+  let changed=0;
+  for(let i=0;i<n;i++) {
+    const p=i*4;
+    if (Math.abs(img.data[p]!-originalRGBA[p]!)>1 ||
+        Math.abs(img.data[p+1]!-originalRGBA[p+1]!)>1 ||
+        Math.abs(img.data[p+2]!-originalRGBA[p+2]!)>1 ||
+        Math.abs(img.data[p+3]!-originalRGBA[p+3]!)>1) changed++;
+  }
+  if (changed===0) return {unchanged:n,changed:0};
+  const sums=Array.from({length:16},()=>[0,0,0,0]);
+  const result=new Uint8Array(n);
+  for(let i=0;i<n;i++) {
+    const p=i*4, a=img.data[p+3]!;
+    const old=originalIdx[i]!;
+    if(a<8) { result[i]=old<8?old:0; continue; }
+    // Os indices 0..7 sao reservados a transparencia no BIN original.
+    let best=8, dist=Infinity;
+    for(let k=8;k<16;k++) {
+      const q=originalPal[k]!;
+      const alphaDelta=a-q[3];
+      const lum=(img.data[p]!+img.data[p+1]!+img.data[p+2]!)/3;
+      const qlum=(q[0]+q[1]+q[2])/3;
+      const score=alphaDelta*alphaDelta*5+(lum-qlum)*(lum-qlum);
+      if(score<dist){dist=score;best=k;}
+    }
+    result[i]=best;
+    const s=sums[best]!;
+    s[0]!+=img.data[p]!;s[1]!+=img.data[p+1]!;s[2]!+=img.data[p+2]!;s[3]!++;
+  }
+  for(let k=8;k<16;k++){
+    const s=sums[k]!;
+    if(s[3]!) setPaletteColor(d,palTex,k,[
+      Math.round(s[0]!/s[3]!),Math.round(s[1]!/s[3]!),Math.round(s[2]!/s[3]!),originalPal[k]![3]
+    ]);
+  }
+  for(let i=0;i<n;i++){
+    const pos=base+(i>>1),b=d[pos]??0,idx=result[i]!;
+    d[pos]=(i&1)?(b&15)|(idx<<4):(b&240)|idx;
+  }
+  return {unchanged:n-changed,changed};
+}
