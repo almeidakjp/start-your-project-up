@@ -353,3 +353,35 @@ export function importLettersColor(d: Uint8Array, bin: { textures: Tex[] }, pix:
     d[pos] = i & 1 ? (old & 15) | (idx << 4) : (old & 240) | idx;
   }
 }
+
+/** Experimento: substitui o desenho 4bpp, mas conserva a paleta RGBA original do BIN.
+ * Transparência de fundo usa o índice 0; cores visíveis são mapeadas para entradas
+ * existentes, priorizando fidelidade de cor e opacidade. Não altera outras texturas.
+ */
+export function importLettersUsingOriginalPalette(d: Uint8Array, pix: Tex, palTex: Tex, img: ImageData) {
+  if (img.width !== pix.width || img.height !== pix.height)
+    throw new Error("O PNG deve ter as mesmas dimensões da textura.");
+  const pal = getPalette(d, palTex);
+  const transparent = pal.map((c, i) => ({ i, a: c[3] })).sort((a, b) => a.a - b.a)[0]!.i;
+  const visible = pal.map((c, i) => ({ c, i })).filter(v => v.c[3] >= 64);
+  if (!visible.length) throw new Error("A paleta original não possui cores visíveis.");
+  const base = pix.offset + 0x80;
+  for (let i = 0; i < pix.width * pix.height; i++) {
+    const p = i * 4;
+    const alpha = img.data[p + 3]!;
+    let idx = transparent;
+    if (alpha >= 16) {
+      let best = Infinity;
+      for (const v of visible) {
+        const c = v.c;
+        const dist = (c[0] - img.data[p]!) ** 2 +
+          (c[1] - img.data[p + 1]!) ** 2 +
+          (c[2] - img.data[p + 2]!) ** 2 +
+          3 * (c[3] - alpha) ** 2;
+        if (dist < best) { best = dist; idx = v.i; }
+      }
+    }
+    const pos = base + (i >> 1), old = d[pos] ?? 0;
+    d[pos] = i & 1 ? (old & 15) | (idx << 4) : (old & 240) | idx;
+  }
+}
