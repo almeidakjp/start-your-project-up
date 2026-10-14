@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importLettersMask, importLettersColor, importLettersUsingOriginalPalette,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importLettersMask, importLettersColor, importLettersUsingOriginalPalette, importLettersGoldBlack,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -142,6 +142,29 @@ function BinEditor() {
     };
     img.onerror = () => setErr("Não foi possível abrir o PNG.");
     img.src = URL.createObjectURL(f);
+  };
+
+  const importGoldBlackFont = (f?: File) => {
+    if (!f || !bin || !pix) return;
+    if (pix.height !== 64) { setErr("Esta função é apenas para fontes 256×64."); return; }
+    const img = new Image();
+    const url = URL.createObjectURL(f);
+    img.onload = () => {
+      try {
+        if (img.naturalWidth !== pix.width || img.naturalHeight !== pix.height)
+          throw new Error("O PNG precisa ter exatamente 256×64 pixels.");
+        const c = document.createElement("canvas");
+        c.width = pix.width; c.height = pix.height;
+        const ctx = c.getContext("2d")!;
+        ctx.drawImage(img, 0, 0);
+        importLettersGoldBlack(bin.data, bin, pix, ctx.getImageData(0, 0, pix.width, pix.height));
+        setErr("");
+        setVer(v => v + 1);
+      } catch (e) { setErr((e as Error).message); }
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => { setErr("Não foi possível abrir o PNG."); URL.revokeObjectURL(url); };
+    img.src = url;
   };
 
   const importOriginalPaletteFont = (f?: File) => {
@@ -298,6 +321,13 @@ function BinEditor() {
               Importar fonte usando paleta original (teste)
               <input type="file" accept="image/png" className="hidden" onChange={(e) => { importOriginalPaletteFont(e.target.files?.[0]); e.target.value = ""; }} />
               <span className="mt-1 block text-xs font-normal text-muted-foreground">Abra primeiro o BIN que funciona. PNG 256×64, sem redimensionamento.</span>
+            </label>
+          )}
+          {pix.height === 64 && (
+            <label className="mt-3 block cursor-pointer rounded-md border border-primary bg-secondary p-3 text-center text-sm font-semibold">
+              Importar fonte preta e dourada (teste)
+              <input type="file" accept="image/png" className="hidden" onChange={(e) => { importGoldBlackFont(e.target.files?.[0]); e.target.value = ""; }} />
+              <span className="mt-1 block text-xs font-normal text-muted-foreground">Usa o desenho do PNG e gera índices 12–15 para preto e dourado</span>
             </label>
           )}
           {pix?.height === 64 && (
