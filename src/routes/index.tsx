@@ -155,7 +155,7 @@ function BinEditor() {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
-  const importPalette = async (file?: File, allTextures = false) => {
+  const importPalette = async (file?: File, allTextures = false, rgbOnly = false) => {
     if (!file || !bin || !palTex) return;
     try {
       const payload = JSON.parse(await file.text());
@@ -167,8 +167,13 @@ function BinEditor() {
         throw new Error("Paleta inválida: esperado arquivo RGBA16 com 16 cores.");
       }
       const targets = allTextures ? bin.textures : [palTex];
-      for (const t of targets) payload.colors.forEach((c: RGBA, i: number) =>
-        setPaletteColor(bin.data, t, i, c));
+      for (const t of targets) {
+        const original = getPalette(bin.data, t);
+        payload.colors.forEach((c: RGBA, i: number) =>
+          setPaletteColor(bin.data, t, i, rgbOnly
+            ? [c[0], c[1], c[2], original[i]![3]]
+            : c));
+      }
       setErr("");
       setVer(v => v + 1);
     } catch (e) { setErr((e as Error).message); }
@@ -239,6 +244,11 @@ function BinEditor() {
                 <input type="file" accept=".json,application/json" className="hidden" onChange={(e) => { importPalette(e.target.files?.[0], false); e.target.value = ""; }} />
               </label>
             </div>
+            <label className="mt-2 block cursor-pointer rounded-md border border-primary/50 bg-secondary p-3 text-center text-sm font-semibold">
+              Importar somente RGB (manter transparência)
+              <input type="file" accept=".json,application/json" className="hidden" onChange={(e) => { importPalette(e.target.files?.[0], false, true); e.target.value = ""; }} />
+              <span className="mt-1 block text-xs font-normal text-muted-foreground">Preserva o alpha e os índices originais do BIN aberto</span>
+            </label>
             {bin.textures.length > 1 && (
               <label className="mt-3 block cursor-pointer rounded-md border p-3 text-center text-sm">
                 Aplicar a todas as paletas
