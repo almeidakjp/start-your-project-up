@@ -144,6 +144,36 @@ function BinEditor() {
     img.src = URL.createObjectURL(f);
   };
 
+  const exportPalette = () => {
+    if (!bin || !palTex) return;
+    const payload = { format: "PES-PSP-RGBA16", version: 1, colors: getPalette(bin.data, palTex) };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = (name.replace(/\\.bin$/i, "") || "paleta") + "-paleta-" + (pal + 1) + ".json";
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  const importPalette = async (file?: File, allTextures = false) => {
+    if (!file || !bin || !palTex) return;
+    try {
+      const payload = JSON.parse(await file.text());
+      if (payload?.format !== "PES-PSP-RGBA16" || payload.version !== 1 ||
+          !Array.isArray(payload.colors) || payload.colors.length !== 16 ||
+          !payload.colors.every((c: unknown) =>
+            Array.isArray(c) && c.length === 4 &&
+            c.every((v: unknown) => typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= 255))) {
+        throw new Error("Paleta inválida: esperado arquivo RGBA16 com 16 cores.");
+      }
+      const targets = allTextures ? bin.textures : [palTex];
+      for (const t of targets) payload.colors.forEach((c: RGBA, i: number) =>
+        setPaletteColor(bin.data, t, i, c));
+      setErr("");
+      setVer(v => v + 1);
+    } catch (e) { setErr((e as Error).message); }
+  };
+
   const colors = bin && palTex ? getPalette(bin.data, palTex) : [];
   const setColor = (i: number, c: RGBA) => { setPaletteColor(bin!.data, palTex!, i, c); setVer((v) => v + 1); };
 
@@ -202,6 +232,21 @@ function BinEditor() {
               ))}
             </div>
             <p className="mt-2 text-xs text-muted-foreground">A barrinha embaixo de cada cor controla a transparência.</p>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button onClick={exportPalette} className="rounded-md bg-secondary py-3 text-sm font-semibold hover:bg-accent">Exportar Paleta</button>
+              <label className="cursor-pointer rounded-md bg-secondary py-3 text-center text-sm font-semibold hover:bg-accent">
+                Importar Paleta
+                <input type="file" accept=".json,application/json" className="hidden" onChange={(e) => { importPalette(e.target.files?.[0], false); e.target.value = ""; }} />
+              </label>
+            </div>
+            {bin.textures.length > 1 && (
+              <label className="mt-3 block cursor-pointer rounded-md border p-3 text-center text-sm">
+                Aplicar a todas as paletas
+                <input type="file" accept=".json,application/json" className="hidden" onChange={(e) => { importPalette(e.target.files?.[0], true); e.target.value = ""; }} />
+                <span className="block text-xs text-muted-foreground">Toque aqui e selecione a paleta JSON</span>
+              </label>
+            )}
+            <p className="mt-2 text-xs text-muted-foreground">Importar paleta altera somente as cores RGBA. Os pixels e índices das letras são preservados.</p>
           </section>
 
           <section className="mt-4 grid grid-cols-2 gap-2">
