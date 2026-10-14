@@ -479,3 +479,30 @@ export function importLettersGoldBlack16(d: Uint8Array, bin: { textures: Tex[] }
   }
   return counts;
 }
+
+/** Experimento inspirado no OPTPiX: 16 cores, sem dithering,
+ * alpha binario protegido e fundo transparente no indice zero.
+ * Nao e uma reproducao exata do algoritmo proprietario do OPTPiX.
+ */
+export function importLettersOptpixStyle(d: Uint8Array, pix: Tex, paletteTexture: Tex, img: ImageData): number[] {
+  if (pix.width !== 256 || pix.height !== 64 || img.width !== 256 || img.height !== 64)
+    throw new Error("Esta conversao exige PNG e BIN 256×64.");
+  const prepared = new ImageData(new Uint8ClampedArray(img.data), img.width, img.height);
+  const a = prepared.data;
+  for (let p = 0; p < a.length; p += 4) {
+    // Evita que RGB invisivel contamine a paleta e protege alpha 0/255.
+    if (a[p+3]! < 128) {
+      a[p]=0; a[p+1]=0; a[p+2]=0; a[p+3]=0;
+    } else {
+      a[p+3]=255;
+    }
+  }
+  importPngWithPalette(d, pix, paletteTexture, prepared);
+  const counts = Array(16).fill(0) as number[];
+  const base = pix.offset + 0x80;
+  for (let i=0;i<pix.width*pix.height;i++) {
+    const b=d[base+(i>>1)]??0;
+    counts[i&1 ? b>>4 : b&15]!++;
+  }
+  return counts;
+}
