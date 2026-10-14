@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importLettersMask, importLettersColor,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importLettersMask, importLettersColor, importLettersUsingOriginalPalette,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -144,6 +144,30 @@ function BinEditor() {
     img.src = URL.createObjectURL(f);
   };
 
+  const importOriginalPaletteFont = (f?: File) => {
+    if (!f || !bin || !pix || !palTex) return;
+    if (pix.height !== 64) { setErr("Esta opção experimental é apenas para letras 256×64."); return; }
+    const img = new Image();
+    const url = URL.createObjectURL(f);
+    img.onload = () => {
+      try {
+        if (img.naturalWidth !== pix.width || img.naturalHeight !== pix.height)
+          throw new Error("O PNG deve ter exatamente 256×64 pixels; não será redimensionado.");
+        const c = document.createElement("canvas");
+        c.width = pix.width; c.height = pix.height;
+        const ctx = c.getContext("2d")!;
+        ctx.drawImage(img, 0, 0);
+        importLettersUsingOriginalPalette(bin.data, pix, palTex,
+          ctx.getImageData(0, 0, pix.width, pix.height));
+        setErr("");
+        setVer(v => v + 1);
+      } catch (e) { setErr((e as Error).message); }
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => { setErr("Não foi possível abrir o PNG."); URL.revokeObjectURL(url); };
+    img.src = url;
+  };
+
   const exportPalette = () => {
     if (!bin || !palTex) return;
     const payload = { format: "PES-PSP-RGBA16", version: 1, colors: getPalette(bin.data, palTex) };
@@ -269,6 +293,13 @@ function BinEditor() {
               Salvar .BIN
             </button>
           </section>
+          {pix.height === 64 && (
+            <label className="mt-3 block cursor-pointer rounded-md border border-primary bg-secondary p-3 text-center text-sm font-semibold">
+              Importar fonte usando paleta original (teste)
+              <input type="file" accept="image/png" className="hidden" onChange={(e) => { importOriginalPaletteFont(e.target.files?.[0]); e.target.value = ""; }} />
+              <span className="mt-1 block text-xs font-normal text-muted-foreground">Abra primeiro o BIN que funciona. PNG 256×64, sem redimensionamento.</span>
+            </label>
+          )}
           {pix?.height === 64 && (
             <label className="mt-3 flex items-center gap-2 text-sm">
               <input type="checkbox" checked={keepColors} onChange={(e) => setKeepColors(e.target.checked)} />
