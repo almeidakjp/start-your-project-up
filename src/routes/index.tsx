@@ -145,6 +145,29 @@ function BinEditor() {
     img.src = URL.createObjectURL(f);
   };
 
+  // Teste v3: exatamente o mesmo quantizador usado na importacao de numeros.
+  const importLettersAsNumbers = (f?: File) => {
+    if (!f || !bin || !pix || !palTex || pix.width !== 256 || pix.height !== 64) return;
+    const img = new Image(), url = URL.createObjectURL(f);
+    img.onload = () => {
+      try {
+        if (img.naturalWidth !== 256 || img.naturalHeight !== 64)
+          throw new Error("A fonte precisa ser PNG de 256×64, sem redimensionamento.");
+        const c = document.createElement("canvas");
+        c.width = 256; c.height = 64;
+        const ctx = c.getContext("2d")!;
+        ctx.drawImage(img, 0, 0);
+        importPngWithPalette(bin.data, pix, palTex, ctx.getImageData(0, 0, 256, 64));
+        setIndexCounts(null);
+        setErr("");
+        setVer(v => v + 1);
+      } catch (e) { setErr((e as Error).message); }
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => { setErr("Não foi possível abrir o PNG."); URL.revokeObjectURL(url); };
+    img.src = url;
+  };
+
   const importGoldBlack16Font = (f?: File) => {
     if (!f || !bin || !pix || pix.height !== 64) return;
     const img = new Image(), url = URL.createObjectURL(f);
@@ -351,6 +374,13 @@ function BinEditor() {
               Importar fonte preta e dourada (teste)
               <input type="file" accept="image/png" className="hidden" onChange={(e) => { importGoldBlackFont(e.target.files?.[0]); e.target.value = ""; }} />
               <span className="mt-1 block text-xs font-normal text-muted-foreground">Usa o desenho do PNG e gera índices 12–15 para preto e dourado</span>
+            </label>
+          )}
+          {pix.width === 256 && pix.height === 64 && (
+            <label className="mt-3 block cursor-pointer rounded-md border border-primary/60 bg-secondary p-3 text-center text-sm font-semibold">
+              Importar letras com conversão dos números (teste v3)
+              <input type="file" accept="image/png" className="hidden" onChange={(e) => { importLettersAsNumbers(e.target.files?.[0]); e.target.value = ""; }} />
+              <span className="mt-1 block text-xs font-normal text-muted-foreground">Recria a paleta completa de 16 cores com o mesmo método dos números. Use o BIN original e o PNG 256×64.</span>
             </label>
           )}
           {pix.height === 64 && (
