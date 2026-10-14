@@ -530,6 +530,8 @@ export function importLettersPreservingIndices(d: Uint8Array, pix: Tex, palTex: 
   let changed=0;
   for(let i=0;i<n;i++) {
     const p=i*4;
+    // Canvas/PNG zera RGB de pixels com alpha=0: nao contar isso como alteracao.
+    if (img.data[p+3]===0 && originalRGBA[p+3]===0) continue;
     if (Math.abs(img.data[p]!-originalRGBA[p]!)>1 ||
         Math.abs(img.data[p+1]!-originalRGBA[p+1]!)>1 ||
         Math.abs(img.data[p+2]!-originalRGBA[p+2]!)>1 ||
