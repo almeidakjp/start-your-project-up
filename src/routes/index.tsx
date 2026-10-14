@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
-  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importLettersMask, importLettersColor, importLettersUsingOriginalPalette, importLettersGoldBlack,
+  readBin, writeBin, getPalette, setPaletteColor, toImageData, importPngWithPalette, importShortColorOnly, importLettersMask, importLettersColor, importLettersUsingOriginalPalette, importLettersGoldBlack, importLettersGoldBlack16,
   type PesBin, type RGBA,
 } from "@/lib/pes-bin";
 
@@ -30,6 +30,7 @@ function BinEditor() {
   const [err, setErr] = useState("");
   const [bg, setBg] = useState("#1f2a24");
   const [keepColors, setKeepColors] = useState(true);
+  const [indexCounts, setIndexCounts] = useState<number[] | null>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
 
   const pix = bin?.textures.find((t) => t.hasPixels);
@@ -142,6 +143,28 @@ function BinEditor() {
     };
     img.onerror = () => setErr("Não foi possível abrir o PNG.");
     img.src = URL.createObjectURL(f);
+  };
+
+  const importGoldBlack16Font = (f?: File) => {
+    if (!f || !bin || !pix || pix.height !== 64) return;
+    const img = new Image(), url = URL.createObjectURL(f);
+    img.onload = () => {
+      try {
+        if (img.naturalWidth !== pix.width || img.naturalHeight !== pix.height)
+          throw new Error("PNG precisa ter exatamente 256×64 pixels.");
+        const c = document.createElement("canvas");
+        c.width = pix.width; c.height = pix.height;
+        const ctx = c.getContext("2d")!;
+        ctx.drawImage(img, 0, 0);
+        setIndexCounts(importLettersGoldBlack16(bin.data, bin, pix,
+          ctx.getImageData(0, 0, pix.width, pix.height)));
+        setErr("");
+        setVer(v => v + 1);
+      } catch (e) { setErr((e as Error).message); }
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = () => { setErr("Não foi possível abrir o PNG."); URL.revokeObjectURL(url); };
+    img.src = url;
   };
 
   const importGoldBlackFont = (f?: File) => {
@@ -329,6 +352,18 @@ function BinEditor() {
               <input type="file" accept="image/png" className="hidden" onChange={(e) => { importGoldBlackFont(e.target.files?.[0]); e.target.value = ""; }} />
               <span className="mt-1 block text-xs font-normal text-muted-foreground">Usa o desenho do PNG e gera índices 12–15 para preto e dourado</span>
             </label>
+          )}
+          {pix.height === 64 && (
+            <div className="mt-3 rounded-md border border-primary/60 bg-secondary p-3">
+              <label className="block cursor-pointer text-center text-sm font-semibold">
+                Importar fonte preta e dourada — 16 cores (teste v2)
+                <input type="file" accept="image/png" className="hidden" onChange={(e) => { importGoldBlack16Font(e.target.files?.[0]); e.target.value = ""; }} />
+                <span className="mt-1 block text-xs font-normal text-muted-foreground">Nova conversão com bordas suavizadas; não substitui o método anterior</span>
+              </label>
+              {indexCounts && <div className="mt-3 grid grid-cols-4 gap-1 text-xs text-muted-foreground">
+                {indexCounts.map((n,i) => <span key={i}>Índice {i}: {n}</span>)}
+              </div>}
+            </div>
           )}
           {pix?.height === 64 && (
             <label className="mt-3 flex items-center gap-2 text-sm">
